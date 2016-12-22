@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang=”ja”>
+    <head>
+        <meta charset=”UTF-8″>
+        <title>Niyalisp -niyari's scheme implementation</title>
+
+        <script src="src/lexer.js"></script>
+        <script src="src/compiler.js"></script>
+        <script src="src/syntax_rules.js"></script>
+        <script src="src/conversion.js"></script>
+        <script src="src/debug_table.js"></script>
+        <script src="src/niyari_vm.js"></script>
+        <script src="src/main.js"></script>
+    </head>
+    <body>
+        <div id="main" style="text-align:center;">
+            <h1>Niyalisp</h1>
+            (a scheme implementation)
+            <br><br>
+            <hr width="800px">
+            かなり未完成です<br>
+            <hr width="500px">
+            <br>
+            コード<br>
+            <textarea id="input" style="width:400px;height:300px;">
+(define (fact n)
+  (if (= n 1)
+    1
+    (* n (fact (- n 1)))))
+(display
+    (fact 100))
+            </textarea>
+            <br><br><br>
+            <button type="button" style="width:200px;height:50px" onClick="run_code()">RUN</button>
+            <br><br>
+            出力結果<br>
+            <textarea id="output"></textarea>
+            <br><br>
+            <hr width="800px">
+        </div>
+
+        <script>
+            //onclick
+            function run_code(){
+                document.getElementById("output").value = "";
+                var code = document.getElementById("input").value;
+                console.log(code);
+                Interface.run_from_file(code,output);
+            }
+
+            function output(txt){
+                var textarea = document.getElementById("output");
+                textarea.value+=txt;
+            }
+        </script>
+    </body>
+</html>
