@@ -92,6 +92,17 @@ Niyari_Vm.Str = function(s){
     this.data = s;
 }
 
+Niyari_Vm.Char = function(c){
+    this.type = "char";
+    this.data = c;
+    this.tag = c;
+    if (c == " "){
+        this.tag = "space";
+    }else if (c == "\n"){
+        this.tag = "newline";
+    }
+}
+
 
 Niyari_Vm.Vector = function(data){
     this.type = "vector";
@@ -159,7 +170,7 @@ Niyari_Vm.set_core_function = function(env){
     env["modulo"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["modulo"],"modulo");
 
     env["not"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["not"],"not");
-    env["bool?"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["bool?"],"bool?");
+    env["boolean?"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["boolean?"],"boolean?");
 
 
     env["cons"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["cons"],"cons");
@@ -171,11 +182,30 @@ Niyari_Vm.set_core_function = function(env){
     env["null?"]  = new Niyari_Vm.Native_Function(Niyari_Vm.funs["null?"],"null?");
     env["list"] =  new Niyari_Vm.Native_Function(Niyari_Vm.funs["list"],"list");
     env["list?"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["list?"],"list?");
-
-
+    env["list-tail"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["list-tail"],"list-tail");
+    env["list-ref"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["list-ref"],"list-ref");
     env["length"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["length"],"length");
     env["append"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["append"],"append");
     env["reverse"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["reverse"],"reverse");
+    env["list-set!"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["list-set!"],"list-set!");
+    env["list-copy"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["list-copy"],"list-copy");
+    
+    env["char?"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["char?"],"char?");
+    env["char->integer"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["char->integer"],"char->integer");
+    env["integer->char"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["integer->char"],"integer->char");
+    env["char=?"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["char=?"],"char=?");
+    env["char>?"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["char>?"],"char>?");
+    env["char<?"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["char<?"],"char<?");
+    env["char<=?"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["char<=?"],"char<=?");
+    env["char>=?"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["char>=?"],"char>=?");
+
+
+
+    env["symbol?"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["symbol?"],"symbol?");
+    env["symbol=?"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["symbol=?"],"symbol=?");
+    env["symbol->string"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["symbol->string"],"symbol->string");
+
+
 
 
     env["vector"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["vector"],"vector");
@@ -305,7 +335,6 @@ Niyari_Vm.Vm = function(){
             }else if (opecode == "FUNC_RUN"){
                 var fun = stack.pop();
                 args = stack.pop(); 
-                console.log(fun.type);
                 if (this.CONFIG_RECORD){
                     this.set_call_history([fun,args]);
                     this.set_machine_code_history([code,addr] );
@@ -478,7 +507,7 @@ Niyari_Vm.Vm = function(){
                         addr = -1;
                     }
                 }else{
-                    console.log(fun);
+                    console.log("NOT FUNCTION",fun);
                     stack.push(new Niyari_Vm.Breaker(Niyari_Vm.printer(fun) + "is not applicable."));
                     break;
                 }
@@ -509,7 +538,8 @@ Niyari_Vm.Vm = function(){
                 stack.push(new Niyari_Vm.Symbol(code[addr][1]));
             }else if (opecode == "PUSH_STRING"){
                 stack.push(new Niyari_Vm.Str(code[addr][1]));
-
+            }else if (opecode == "PUSH_CHAR"){
+                stack.push(new Niyari_Vm.Char(code[addr][1]));
             }else if (opecode == "PUSH_UNDEF"){
                 stack.push(Niyari_Vm.undef);
             }else if (opecode == "CREATE_FREE"){
@@ -524,7 +554,7 @@ Niyari_Vm.Vm = function(){
                 }else{
                     var _changes = [];
                     for (var i=0;i<code[addr][1];i++){
-                        _changes.push(stack.pop());
+                        _changes.unshift(stack.pop()); //fixed
                     }
                     stack.push(_changes);
                 }
@@ -627,68 +657,161 @@ Niyari_Vm.error_printer = function(error_mes,call_hist,code_hist,vm){
 }
 
 
-Niyari_Vm.datum_id = 0;
-Niyari_Vm.printer = function(o){
+//Niyari_Vm.datum_id = 0;
+Niyari_Vm.printer = function(obj){
     
-    if (o.type == "pair"){
-         var ret = "( ";
-         var cell = o;
-         
-         var is_c_list = Niyari_Vm.is_circle_list(cell);
-          if (is_c_list){
-              var ctxt = Niyari_Vm.circle_list2txt(cell,is_c_list);
-              return ctxt;
-          }
+   var used = [];
+   var loop_cell = [];
+   var counter = [];
+   function loop_catch(o){
+       if (o.type == "pair"){
+           var cell = o;
+           while (cell){
+                if (cell.type == "null"){
+                    break;
+                }else if (cell.type != "pair"){
+                    break;   
+                }
+                var bflag = false;
+                for (var i=0;i<used.length;i++){
+                    if (used[i] == cell){
+                        var lflag = false;
+                        for (var j=0;j<loop_cell.length;j++){
+                            if (cell == loop_cell[j]){
+                                lflag = true;
+                                break;
+                            }
+                        }
+                        if (!lflag){
+                            loop_cell.push(cell);
+                            counter.push(0);
+                        }
+                        bflag = true;
+                    }
+                }
 
-         while (cell){
-            if (cell.type == "null"){
-                break;
-            }else if (cell.type != "pair"){
-               ret += " . " + Niyari_Vm.printer(cell);
-               break;
-            }
-            ret += " " + Niyari_Vm.printer(cell.car);
-             cell = cell.cdr;
-         }
-         ret += " ) ";
-        return ret;
-    }else if (o.type == "vector"){
-        var ret = "#(";
-        for (var i=0;i<o.data.length;i++){
-            ret += Niyari_Vm.printer(o.data[i]) + " ";
-        }
-        ret += ")";
-        return ret;
-    }else if (o.type == "null"){
-        return "\'()";
-    }else if (o.type == "native"){
-        return "<procedure " + o.name +" >";
-   }else if (o.type == "function"){
-       return "<procedure ?>";
-   }else if (o.type == "closure"){
-       return "<closure>";
-   }else if (o.type == "breaker"){
-       return "<procedure ret>";
-   }else if (o.type == "continuation"){
-       return "<continuation>";
-    }else if (o.type == "bool"){
-        if (o.data){
-            return "#t";
-        }else{
-            return "#f";
-        }
-    }else if (o.type == "integer"){
-        return "" + o.data;
-    }else if (o.type == "symbol"){
-        return o.data;
-    }else if (o.type == "string"){
-        return o.data;
-    }else if (o.type == "undefined"){
-        return "<undefined>";
-    }else{
-        return "?" + o.type;
+                if (!bflag){
+                    used.push(cell);
+                }else{
+                    break;
+                }
+                loop_catch(cell.car);
+                cell = cell.cdr;
+
+           }
+       }else if (o.type == "bector"){
+           for (var i=0;i<o.data.length;i++){
+               loop_catch(o[i]); 
+           }
+       }
+   }
+
+    loop_catch(obj);
+    if (loop_cell.length){
+        loop_cell.reverse();
     }
 
+
+
+    function rec(o){
+        if (o.type == "pair"){
+
+            var bflag = false;
+            for (var i=0;i<loop_cell.length;i++){
+                if (o == loop_cell[i]){
+                    if (counter[i] == 0){
+                        counter[i] = 1;
+                        return "#" + i + "=" + rec(o);
+                    }else if (counter[i] == 1){
+                        //pass
+                    }else{
+                        return "#" + i + "#";
+                    }
+                }
+            }
+
+
+
+
+
+
+             var ret = "( ";
+             var cell = o;
+             
+              
+             while (cell){
+                 if (cell.type == "null"){
+                    break;
+                 }else if (cell.type != "pair"){
+                    ret += " . " + rec(cell);
+                    break;
+                 }
+
+                 var bflag = false;
+                 for (var i=0;i<loop_cell.length;i++){
+                    if (cell == loop_cell[i]){
+                        if (counter[i] == 0){
+                            counter[i] = 1;
+                            ret += " . " + "#" + i + "=" + rec(cell);
+                            bflag = true;
+                            break;
+                        }else if (counter[i] == 1){
+                            counter[i] = 2;
+                        }else{
+                            ret += ". #" + i + "#";
+                            bflag = true;
+                        }           
+                    }
+                 }
+                 if (bflag){
+                    break;
+                 }
+                 ret += rec(cell.car) + " ";
+                 cell = cell.cdr;
+            }
+
+             ret += " ) ";
+             return ret;
+        }else if (o.type == "vector"){
+            var ret = "#(";
+            for (var i=0;i<o.data.length;i++){
+                ret += rec(o.data[i]) + " ";
+            }
+            ret += ")";
+            return ret;
+        }else if (o.type == "null"){
+            return "\'()";
+        }else if (o.type == "native"){
+            return "<procedure " + o.name +" >";
+       }else if (o.type == "function"){
+           return "<procedure ?>";
+       }else if (o.type == "closure"){
+           return "<closure>";
+       }else if (o.type == "breaker"){
+           return "<procedure ret>";
+       }else if (o.type == "continuation"){
+           return "<continuation>";
+        }else if (o.type == "bool"){
+            if (o.data){
+                return "#t";
+            }else{
+                return "#f";
+            }
+        }else if (o.type == "integer"){
+            return "" + o.data;
+        }else if (o.type == "symbol"){
+            return o.data;
+        }else if (o.type == "string"){
+            return "\"" + o.data + "\"";
+        }else if (o.type == "char"){
+            return "#\\" + o.tag;
+        }else if (o.type == "undefined"){
+            return "<undefined>";
+        }else{
+            return "?" + o.type;
+        }
+    }
+    return rec(obj);
 }
 
 
@@ -756,13 +879,7 @@ Niyari_Vm.get_list_type = function(ls){
 
 
 
-
-
-
-
-
-
-
+/*
 Niyari_Vm.circle_list2txt = function(ls,tortoise){
     var hare = ls;
 
@@ -798,6 +915,7 @@ Niyari_Vm.circle_list2txt = function(ls,tortoise){
     }
     return ret;
 }
+*/
 
 
 
@@ -819,6 +937,19 @@ Niyari_Vm.error_gen.wrong_type_error = function(a,b){
 }
 
 
+Niyari_Vm.error_gen.index_error = function(obj,i){
+    var error_message = "ERROR: index error =>" + Niyari_Vm.printer(obj) + " at " + i ;
+    return new Niyari_Vm.Breaker(error_message);
+}
+
+
+
+
+Niyari_Vm.error_gen.error = function(mes){
+    return new Niyari_Vm.Breaker(mes);
+}
+
+
 
 
 
@@ -827,6 +958,7 @@ Niyari_Vm.error_gen.wrong_type_error = function(a,b){
 // FUNCTIONS
 //
 //
+
 
 Niyari_Vm.funs = {};
 
@@ -840,6 +972,15 @@ Niyari_Vm.funs["display"] = function(args){
     Niyari_Vm.output_function(Niyari_Vm.printer(args[1]));
     return Niyari_Vm.undef;
 }
+
+
+//
+//r7rs 6.1
+//
+
+//eq?
+//equal?
+//eqv?
 
 
 
@@ -862,6 +1003,8 @@ Niyari_Vm.operator.int_sub = function(a,b){
 Niyari_Vm.operator.int_mul = function(a,b){
     return a.data * b.data;
 }
+
+
 
 
 
@@ -932,12 +1075,23 @@ Niyari_Vm.funs["not"] = function(args){
 }
 
 
-Niyari_Vm.funs["bool?"] = function(args){
+Niyari_Vm.funs["boolean?"] = function(args){
     if (args[1].type == "bool"){
         return Niyari_Vm.bool_true;
     }
     return Niyari_Vm.bool_false;
 }
+
+Niyari_Vm.funs["boolean=?"] = function(args){
+    if (args.length < 3){
+         args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,">=2","boolean=?");
+        return Niyari_Vm.undef;
+    }
+    
+
+   
+}
+
 
 
 
@@ -1045,7 +1199,6 @@ Niyari_Vm.funs["list?"] = function(args){
 }
 
 Niyari_Vm.funs["make-list"] = function(args){
-
 }
 
 Niyari_Vm.funs["list"] = function(args){
@@ -1185,28 +1338,251 @@ Niyari_Vm.funs["reverse"] = function(args){
     return ret;
 }
 
-Niyari_Vm.funs["list-tail"] = function(args){
 
+
+Niyari_Vm.funs["list-tail"] = function(args){
+    var cell = args[1];
+    var num = args[2].data;
+    for (var i=0;i<num;i++){
+        cell = cell.cdr;
+    }
+    return cell;
 }
 
 Niyari_Vm.funs["list-ref"] = function(args){
+    if (args.length != 3){
+        args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,2,"list-ref");
+        return Niyari_Vm.undef;
+    }
 
+    if (args[2].type != "integer"){
+        args[0] = Niyari_Vm.error_gen.wrong_type_error("integer",args[2]);
+        return Niyari_Vm.undef;
+    }
+
+    var cell = args[1];
+    var loop_size = args[2].data;
+    for (var i=0;i<loop_size;i++){
+        if (cell.type != "pair"){
+            args[0] = Niyari_Vm.error_gen.wrong_type_error("peroper-list",args[1]);
+            return null;
+        }
+        cell = cell.cdr;
+        if (cell.type == "null"){
+            args[0] = Niyari_Vm.error_gen.index_error(args[1],loop_size);
+            return null;
+        }
+    }
+    console.log(cell);
+    return cell.car;
 }
+
 
 Niyari_Vm.funs["list-set!"] = function(args){
+    if (args.length != 4){
+         args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,3,"list-set!");
+        return Niyari_Vm.undef;
+    }
 
+    if (args[2].type != "integer"){
+        args[0] = Niyari_Vm.error_gen.wrong_type_error("integer",args[2]);
+        return Niyari_Vm.undef;
+    }
+
+    var cell = args[1];
+    var loop_size = args[2].data;
+    for (var i=0;i<loop_size;i++){
+        if (cell.type != "pair"){
+            args[0] = Niyari_Vm.error_gen.wrong_type_error("peroper-list",args[1]);
+            return null;
+       
+        }
+        cell = cell.cdr;
+        if (cell.type == "null"){
+            args[0] = Niyari_Vm.error_gen.index_error(args[1],loop_size);
+            return null;
+
+        }
+    }
+    cell.car = args[3];
+    return Niyari_Vm.undef;
 }
+
+    
 
 //
 //memq memv member
 //assq assv assoc
 //
 Niyari_Vm.funs["list-copy"] = function(args){
+    if (args.length != 2){
+        args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,1,"list-copy");
+        return Niyari_Vm.undef;
+    }
+    
+    if (args[1].type == "pair"){
+        var cell = args[1];   
+        var ret = new Niyari_Vm.Pair(null,Niyari_Vm.NULL);
+        var front = ret;
+        while (cell){
+            if (cell.type != "pair"){
+                ret.cdr = cell;
+            }
+            ret.cdr = new Niyari_Vm.Pair(cell.car,Niyari_Vm.NULL);
+            ret = ret.cdr;
+            cell = cell.cdr;
+            if (cell.type == "null"){
+                break;       
+            }
+        }
+        return front.cdr;
+    }else{
+        return args[1];
+    }
+}
 
+//r7rs6.5
+
+
+Niyari_Vm.funs["symbol?"] = function(args){
+    if (args.length != 2){
+        args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,1,"list-copy");
+        return Niyari_Vm.undef;
+    }
+
+    if (args[1].type == "symbol"){
+        return Niyari_Vm.bool_true;
+    }else{
+        return Niyari_Vm.bool_false;
+    }
+}
+
+Niyari_Vm.funs["symbol=?"] = function(args){
+    if (args.length < 3){
+         args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,">=2","symbol=?");
+        return Niyari_Vm.undef;
+    }
+
+    if (args[1].type != "symbol"){
+        args[0] = Niyari_Vm.error_gen.wrong_type_error("symbol",args[1]);
+        return Niyari_Vm.undef;
+    }
+    var sym = args[1].data;
+    
+    for (var  i=2;i<args.length;i++){
+         if (args[i].type != "symbol"){
+            args[0] = Niyari_Vm.error_gen.wrong_type_error("symbol",args[i]);
+            return Niyari_Vm.undef;
+        }       
+        if (sym != args[i].data){
+            return Niyari_Vm.bool_false;
+        }
+    }
+    return Niyari_Vm.bool_true;
+}
+
+Niyari_Vm.funs["symbol->string"] = function(args){
+    if (args.length != 2){
+        args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,">=2","symbol=?");
+        return Niyari_Vm.undef;
+    }
+    if (args[1].type != "symbol"){
+        args[0] = Niyari_Vm.error_gen.wrong_type_error("symbol",args[1]);
+        return Niyari_Vm.undef;
+    }
+    return new Niyari_Vm.Str(args[1].data);
 }
 
 
-//r7rs 6.8
+//r7rs 6.6 char
+
+
+Niyari_Vm.char_util = {};
+Niyari_Vm.char_util.generate_comparator = function(ope){
+    function comp(args){
+        if (args.length < 3){
+             args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,">=2","char=?");
+            return Niyari_Vm.undef;
+        }
+        var f = args[1].data.charCodeAt(0);
+        for (var i=2;i<args.length;i++){
+            var c = args[i].data.charCodeAt(0);
+            if ((ope==0 && f != c)||
+                (ope==1 && f >= c)||
+                (ope==2 && f <= c)||
+                (ope==3 && f > c) ||
+                (ope==4 && f < c) ){
+                return Niyari_Vm.bool_false;
+            }
+            f = c;
+        }
+        return Niyari_Vm.bool_true;
+    }
+    return comp;
+}
+
+
+
+Niyari_Vm.funs["char=?"] = Niyari_Vm.char_util.generate_comparator(0);
+Niyari_Vm.funs["char<?"] = Niyari_Vm.char_util.generate_comparator(1);
+Niyari_Vm.funs["char>?"] = Niyari_Vm.char_util.generate_comparator(2);
+Niyari_Vm.funs["char<=?"] = Niyari_Vm.char_util.generate_comparator(3);
+Niyari_Vm.funs["char>=?"] = Niyari_Vm.char_util.generate_comparator(4);
+
+
+Niyari_Vm.funs["char?"] = function(args){
+    if (args.length != 2){
+         args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,"1","char->integer");
+        return Niyari_Vm.undef;
+    }
+    
+    if (args[1].type == "char"){
+        return Niyari_Vm.bool_true;
+    }
+    return Niyari_Vm.bool_false;
+}
+
+
+
+
+
+Niyari_Vm.funs["char->integer"] = function(args){
+    if (args.length != 2){
+        args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,"1","char->integer");
+        return Niyari_Vm.undef;
+    }
+    if (args[1].type != "char"){
+        args[0] = Niyari_Vm.error_gen.wrong_type_error("char",args[1]);
+        return Niyari_Vm.undef;
+    }   
+    var char_code = args[1].data.charCodeAt(0);
+    return new Niyari_Vm.Integer(char_code);
+}
+
+Niyari_Vm.funs["integer->char"] = function(args){
+     if (args.length != 2){
+        args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,"1","integer->char");
+        return Niyari_Vm.undef;
+    }
+    if (args[1].type != "integer"){
+        args[0] = Niyari_Vm.error_gen.wrong_type_error("integer",args[1]);
+        return Niyari_Vm.undef;
+    }   
+
+    var ret_char = String.fromCharCode(args[1].data);
+    console.log("HEY!!!!",ret_char);
+    return new Niyari_Vm.Char(ret_char);
+}
+
+
+
+
+    
+
+
+
+
+//r7rs 6.8 vector
 
 Niyari_Vm.funs["vector"] = function(args){
     return new Niyari_Vm.Vector(args.slice(1));

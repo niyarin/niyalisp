@@ -1,11 +1,9 @@
-var is_node = typeof require !==  "undefined";
-
-
 /**
  * @namespace
  */
 Compiler = {};
 
+var is_node = typeof require !==  "undefined";
 if (is_node){
     var Lexer = require("./lexer");
     module.exports = Compiler;
@@ -182,9 +180,10 @@ Compiler.Compiler = function(){
           var static_addr = this.statics_push(const_code);   
           this.non_eval_statics_ids.push(static_addr);
           return [["LOAD_STATIC",static_addr]];         
-
-
+        }else if (code.type == "char"){
+            return [["PUSH_CHAR",code.data]];
         }
+
     }
 
     this.compile_lambda = function(code){

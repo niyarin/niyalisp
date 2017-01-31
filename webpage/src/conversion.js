@@ -171,7 +171,7 @@ Conversion.syntax_converter.let2lambda = function(code){
     var_list.cdr = null;
     init_list.cdr = null;
 
-    var lambda_cell = new Lexer.Pair(new Lexer.Token("symbol","lambda"),null);
+    var lambda_cell = new Lexer.Pair(new Lexer.Token("symbol","lambda",-1),null);
     lambda_cell.cdr = new Lexer.Pair(var_list_front.cdr,null);
     lambda_cell.cdr.cdr = bodies_cell;
 
@@ -186,9 +186,9 @@ Conversion.expand_begin = function(code){
         return code.car;
     }
     var ret = 
-        new Lexer.Pair(new Lexer.Token("symbol","let"),
+        new Lexer.Pair(new Lexer.Token("symbol","let",-1),
                 new Lexer.Pair(
-                   new Lexer.Pair(new Lexer.Pair(new Lexer.Token("symbol","__null__"),new Lexer.Pair(code.car,null)),null),
+                   new Lexer.Pair(new Lexer.Pair(new Lexer.Token("symbol","__null__",-1),new Lexer.Pair(code.car,null)),null),
                    new Lexer.Pair(Conversion.expand_begin(code.cdr),null)));
 
     return ret;
@@ -203,7 +203,6 @@ Conversion.internal_conversion = function(code,env){
 
         var expression = code.car;
         var operator = expression.car;
-        console.log("expression",operator);
         if (operator.type == "symbol"){
              
             operator.data = Conversion.rename(operator.data,env.renames);
@@ -250,6 +249,7 @@ Conversion.internal_conversion = function(code,env){
                 env.in_function++;
 
                 var begin_expression = Conversion.expand_begin(bodies);
+
                 expression.cdr.cdr = new Lexer.Pair(begin_expression,null);
 
                 
@@ -270,6 +270,9 @@ Conversion.internal_conversion = function(code,env){
                     env.error.push(is_err);
                     return new Lexer.Pair(null,null);
                 }               
+                Conversion.internal_conversion(expression.cdr,env);
+                Conversion.internal_conversion(expression.cdr.cdr,env);
+                Conversion.internal_conversion(expression.cdr.cdr.cdr,env);
                 return;
             }else if (operator.data == "letrec"){
                 operator.data = "let";
@@ -566,8 +569,11 @@ Conversion.Cps_converter = function(){
                     return this.convert_lambda(code,next,env);            
                 }else if (operator == "let"){
                 
-                }else if (operator == "define" || operator == "set!"){
-                    return this.define_conversion(code,next,env);
+                }else if ((operator == "define" || operator == "set!")){
+                    //return this.define_conversion(code,next,env);
+                     //var ret = this.convert_func_run(code,next,env);
+                     var ret = this.def_set_conversion(code,next,env);
+                     return ret;
                     /*
                     var body_cell = code.cdr.cdr;
                     body_cell.car = this.convert(body_cell.car,next,env);
@@ -589,32 +595,38 @@ Conversion.Cps_converter = function(){
         return new Lexer.Pair(new Lexer.Token("symbol","#undef",-1),null);
     }
 
-        
-    this.define_conversion = function(code,next,env){
+
+
+    this.def_set_conversion = function(code,next,env){
+        var sym = code.cdr.car;
+        var body = code.cdr.cdr.car;
+        if (body.type != "pair" ){
+            return code;
+        }
+
        var new_sym = Conversion.gensym("p",env.all_symbols);
-       env.all_symbols[new_sym] = true;
        var new_sym_token = new Lexer.Token("symbol",new_sym,-1);
-
-       var body = code.cdr.cdr.car;
+       env.all_symbols[new_sym] = true;
+       
        code.cdr.cdr.car = new_sym_token;
-       //
-       var a_code = new Lexer.Pair(next,
-               new Lexer.Pair(code,null));
-       //
+       
 
-       var lmd = this.create_cont_lambda(a_code,new_sym_token);
+       var new_body = new Lexer.Pair(next,new Lexer.Pair(code,null));
+       var lmd = this.create_cont_lambda(new_body,new_sym_token);
+       var converted_body = this.convert(body,lmd,env);
+       
 
-       var ret = this.convert(body,lmd,env);
-
-       if (this.not_procedure(ret)){
-
-           code.cdr.cdr.car = body;
+       if (this.not_procedure(body)){
+           code.cdr.cdr.car = converted_body;
            return code;
        }else{
-           console.log("!",code);
+           return converted_body;   
        }
-       return ret;
     }
+
+
+
+        
 
 
     this.if_conversion = function(code,next,env){
@@ -647,6 +659,9 @@ Conversion.Cps_converter = function(){
 
 
     this.convert_lambda = function(code,next,env){
+        // (lambda (a1 ... an) exp) -> (lambda (k a1 ... an) (k exp))
+
+
         var cont_sym_token = this.generate_symbol("k",env.all_symbols);
         cont_sym_cell = new Lexer.Pair(cont_sym_token,null);
 
@@ -654,19 +669,33 @@ Conversion.Cps_converter = function(){
         env.all_symbols[new_sym] = true;
         var new_sym_token = new Lexer.Token("symbol",new_sym,-1);
 
-
+        //(a1 ... an) -> (k a1 ... an)
         cont_sym_cell.cdr = code.cdr.car;
         code.cdr.car = cont_sym_cell;
+
+
         var body = code.cdr.cdr.car;
+        /*
+         bodyをconvertすると無限ループする
+         */
+       
+
         //var is_not_proc = this.not_procedure(body);
         var compiled_body = this.convert(body,cont_sym_cell.car,env);
         var is_not_proc = this.not_procedure(compiled_body);
+
+
+
+
+
+
         if (is_not_proc ){
             var apply_cont_code =  new Lexer.Pair(cont_sym_token,new Lexer.Pair(compiled_body,null));
             code.cdr.cdr = new Lexer.Pair(apply_cont_code,null );
         }else{
             code.cdr.cdr = new Lexer.Pair(compiled_body,null);
         }
+
         return code;
     }
     
@@ -688,11 +717,11 @@ Conversion.Cps_converter = function(){
 
     this.convert_func_run = function(code,next,env){
         var args = code.cdr;
+
         var org = code
         var org_top = org;
         
         var body = org;
-        
 
         org.cdr = new Lexer.Pair(next,null);
         org = org.cdr;
@@ -707,7 +736,6 @@ Conversion.Cps_converter = function(){
 
                var new_sym_token = new Lexer.Token("symbol",new_sym,line_d);
                if (line_d != -1){
-               
                    new_sym_token.tag = "gen_var";
                }
 
@@ -717,11 +745,23 @@ Conversion.Cps_converter = function(){
                var prev_body = body;
                body = this.convert(args.car,lmd,env);
 
-               
-               if (this.not_procedure(args.car)){
-                   org.cdr = new Lexer.Pair(body,null);
-                   body = prev_body;
-
+               /*
+               if (this.not_procedure(body)){
+                 org.cdr = new Lexer.Pair(body,null);
+                 body = prev_body;
+               }else{
+               }*/
+               if (this.not_procedure(body)){
+                  org.cdr = new Lexer.Pair(body,null);
+                  body = prev_body;
+               }else{
+                   /*
+                   if (this.not_procedure(args.car)){
+                       
+                   }else{
+                   
+                   }
+                   */
                }
 
                org = org.cdr;
@@ -734,16 +774,19 @@ Conversion.Cps_converter = function(){
         
 
 
-
         if (org_top.car.type == "pair"){
+            // ( ( x ... ) arg1 arg2 ... argn)
 
             var new_sym = Conversion.gensym("p",env.all_symbols,-1);
             env.all_symbols[new_sym] = true;
             var new_sym_token = new Lexer.Token("symbol",new_sym,-1);
 
             var lmd = this.create_cont_lambda(body,new_sym_token);
+            
             var prev_body = body;
+
             var body = this.convert(org_top.car,lmd,env);
+
             if (body.car.data == "lambda"){
                 org_top.car = body;
                 body = prev_body;
@@ -789,6 +832,20 @@ Conversion.Cps_converter = function(){
         lambda_cell.cdr = var_cell;
         var_cell.cdr = new Lexer.Pair(body,null);
         return lambda_cell;
+    }
+
+
+    //後で消す↓ 
+    this.shallow_copy = function(ls){
+        var cell = ls;
+        var ret = new Lexer.Pair(null,null);
+        var front = ret;
+        while (ls){
+        ret.cdr = new Lexer.Pair(ls.car,null);
+        ret = ret.cdr;
+        ls = ls.cdr;
+        }
+        return front.cdr;
     }
 
 
@@ -871,6 +928,11 @@ Conversion.Closure_conv_env = function(vars){
 }
 
 
+
+
+
+
+
 Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
     this.all_symbols = all_symbols;
     this.stack = [];
@@ -882,14 +944,15 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
         this.d_assignment_vars[d_assignment_vars[i]] = true;
     }
 
+
     this.search_free = function(sym){
         var d_vars = this.d_assignment_vars;
         var rec = function(pos,stack){
             if (pos == -1)return 0;
             var env = stack[pos];
 
-            if (env.frees[sym])return 1;
             if (env.change_var[sym])return -1;
+            if (env.frees[sym])return 1;
             if (env.searched[sym])return 0;
 
             var vars = env.vars;
@@ -913,6 +976,7 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
             env.searched[sym] = true;
             return f;
         }
+
         rec(this.stack.length-1,this.stack);
     }
 
@@ -959,6 +1023,10 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
                     return;
                 }else if (operator == "set!"){
                     this.search_free(code.cdr.car.data);
+                    this.search_update_change_var(code.cdr.car.data,this.stack.length-1,0);
+                    /*
+
+                    */
                     /*
                     if (this.stack.length){
                         var e = this.stack[this.stack.length-1];
@@ -967,7 +1035,6 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
                         }
                     }
                     */
-                    //NEED RETURN?
                 }else if (operator == "quote"){
                     return;
                 }
@@ -1026,7 +1093,7 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
 
 
     this.append_def = function(var_token,body){
-        var d = new Lexer.Pair(new Lexer.Token("symbol","define"),
+        var d = new Lexer.Pair(new Lexer.Token("symbol","define",-1),
                 new Lexer.Pair(var_token,
                 new Lexer.Pair(body,null)));
         
@@ -1048,8 +1115,8 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
         args = args.cdr;
 
         for (var key in frees){
-            lmd_vars = new Lexer.Pair(new Lexer.Token("symbol",key),lmd_vars);
-            args = new Lexer.Pair(new Lexer.Token("symbol",key),args);
+            lmd_vars = new Lexer.Pair(new Lexer.Token("symbol",key,-1),lmd_vars);
+            args = new Lexer.Pair(new Lexer.Token("symbol",key,-1),args);
         }
         
         var_cont.cdr = lmd_vars;
@@ -1061,6 +1128,8 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
     
     this.closure_conversion = function(lambda,free_var){
         var _tmp_frees = Object.keys(free_var.frees);
+        _tmp_frees.sort();
+
         var frees = [];
         for (var i=0;i<_tmp_frees.length;i++){
             if (free_var.frees[_tmp_frees[i]]){
@@ -1069,11 +1138,12 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
         }
 
         var changes = Object.keys(free_var.change_var);
+        changes.sort();
 
         if (frees.length>0||changes.length>0){
             var args = lambda.cdr.car;
 
-            var env_var_token = new Lexer.Token("symbol","#local");
+            var env_var_token = new Lexer.Token("symbol","#local",-1);
                         
 
             var body = lambda.cdr.cdr;
@@ -1095,6 +1165,7 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
             if (changes.length){
                 //changes_list = new Lexer.Pair(this.convert_free_vars_to_list(changes),null);
                 changes_list = new Lexer.Pair(this.convert_change_vars_to_list(changes),null);
+                list_write(changes_list);
             }
 
             lambda.car.data = "#closure";
@@ -1116,6 +1187,7 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
             
             while (code_cell){
                 if (code_cell.car.type == "symbol"){
+                  
                     var index = -1;
                     for (var i=0;i<frees.length;i++){
                         if (frees[i] == code_cell.car.data){
@@ -1123,32 +1195,34 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
                             break;
                         }
                     }
-                    
-                    if (index == -1){
-                        for (var j=0;j<changes.length;j++){
-                            if (changes[j] == code_cell.car.data){
-                                index = j;
-                                break;
-                            }
+                    var is_change_var = false;
+                    for (var j=0;j<changes.length;j++){
+                        if (changes[j] == code_cell.car.data){
+                            index = j;
+                            is_change_var = true;
+                            break;
                         }
-                        if (index != -1){
-                                var env_var_token = new Lexer.Token("symbol","#loadout");
-                                var l_access = new Lexer.Pair(env_var_token,
-                                                new Lexer.Pair(new Lexer.Token("integer",index),null));
-                                code_cell.car = l_access;     
-                        }
+                    }
+                    if (index != -1 && is_change_var){
+                            var env_var_token = new Lexer.Token("symbol","#loadout",-1);
+                            var l_access = new Lexer.Pair(env_var_token,
+                                            new Lexer.Pair(new Lexer.Token("integer",index,-1),null));
+                            code_cell.car = l_access;     
+                    }
 
-                    }else{
+                    if (index != -1 && !is_change_var ){
                         /*
                         var l_access = new Lexer.Pair(env_var,
                                             new Lexer.Pair(new Lexer.Token("integer",index),null));
                         */
                         var l_access = new Lexer.Pair(env_var,
-                                            new Lexer.Pair(new Lexer.Token("integer",index),
+                                            new Lexer.Pair(new Lexer.Token("integer",index,-1),
                                                 new Lexer.Pair(code_cell.car,null)));
 
                         code_cell.car = l_access;
                     }
+
+
                 }else if (code_cell.car.type == "pair"){
                     if (code_cell.car.car.data == "set!"){
                         this.closure_conversion_recur(code_cell.car,frees,env_var,changes);
@@ -1163,15 +1237,16 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
         if (ope == "set!"){
             var _var = code.cdr.car;
             if (_var.type == "pair"){
+                //convert:(set! (#local pos symbol) exp) -> (set! pos exp)
                 code.cdr.car = _var.cdr.car;
             }
         }
     }
     
 
-
     this.search_update_change_var = function(sym,pos,uc_flag){
         if (uc_flag){
+            //search
             var e = this.stack[pos];
             if (e.frees[sym]){
                 if (e.change_var[sym]){
@@ -1186,6 +1261,7 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
             }
             return false;
         }else{
+            //update
             var e = this.stack[pos];
             if (e.frees[sym]){
                 e.change_var[sym] = true;
@@ -1205,6 +1281,9 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
 
         var prev_e = this.stack[this.stack.length-1];  
         var _prev_frees = Object.keys(prev_e.frees);
+        _prev_frees.sort();
+
+
         var prev_frees = [];
 
         for (var i=0;i<_prev_frees.length;i++){
@@ -1217,13 +1296,13 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
         var front = cell;
 
         for (var i=0;i<frees.length;i++){
-            var sym_data = new Lexer.Token("symbol",frees[i]);
+            var sym_data = new Lexer.Token("symbol",frees[i],-1);
             
             if (prev_e.frees[frees[i]]){
                 for (var index=0;prev_frees.length;index++){
                     if (prev_frees[index] == frees[i]){
-                        sym_data = new Lexer.Pair(new Lexer.Token("symbol","#local"),
-                                            new Lexer.Pair(new Lexer.Token("integer",index),null));
+                        sym_data = new Lexer.Pair(new Lexer.Token("symbol","#local",-1),
+                                            new Lexer.Pair(new Lexer.Token("integer",index,-1),null));
 
                         break;
                     }
@@ -1240,8 +1319,10 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
     }
 
     this.convert_change_vars_to_list = function(changes){
+        //1個外側の環境にアクセスする
         var prev_e = this.stack[this.stack.length-1];          
         var _prev_changes = Object.keys(prev_e.change_var);
+        _prev_changes.sort();
 
         var cell = new Lexer.Pair(null,null);
         var front = cell;
@@ -1277,11 +1358,16 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
 
 function list_write(list,nest){
     if (!nest){nest = 0;}
+    if (nest >= 20){
+        console.log("............ mugen loop");
+        return;
+    }
     if (list==null){console.log(Array(nest+1).join(" "),"()");return;}
 
     if (list.type == "pair"){
         var cell = list;
         console.log(Array(nest+1).join(" "),"(");
+        var l = 0;
         while (cell){
             list_write(cell.car,nest+1);
             cell = cell.cdr;
@@ -1290,6 +1376,7 @@ function list_write(list,nest){
                 list_write(cell,nest+1);
                 break;
             }
+            l++;
         }
 
         console.log(Array(nest+1).join(" "),")");

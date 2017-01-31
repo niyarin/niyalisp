@@ -48,7 +48,14 @@ Lexer.analyze_atom = function(atom,line,pos){
 
 
         if (atom[1] == "\\" && atom.length == 3){
-            return new Lexer.Token("char",atom,line);
+            return new Lexer.Token("char",atom[2],line);
+        }else if (atom[1] == "\\"){
+            if (atom == "#\\space"){
+                return new Lexer.Token("char"," ",line);
+            }else if (atom == "#\\newline"){
+                return new Lexer.Token("char","\n",line);
+            }
+
         }
         return new Lexer.Token("error","invalid token " + ("(line:" + line + ") ") + atom);
     }
