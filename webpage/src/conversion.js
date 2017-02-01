@@ -641,6 +641,11 @@ Conversion.Cps_converter = function(){
         
         var converted_true_case = this.convert(code.cdr.cdr.car,next,env);
         var converted_false_case = this.convert(code.cdr.cdr.cdr.car,next,env);
+        if (this.not_procedure(ret)){
+            ret = code;
+            code.cdr.car = test_expression;
+
+        }
 
         if (this.not_procedure(converted_true_case)){
             converted_true_case = new Lexer.Pair(next,new Lexer.Pair(converted_true_case,null));
