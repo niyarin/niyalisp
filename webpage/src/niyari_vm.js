@@ -2,6 +2,12 @@ var Niyari_Vm = {};
 
 var is_node = typeof require !==  "undefined";
 
+if (is_node){
+    module.exports = Niyari_Vm;
+    var Debug_table = require("./debug_table");
+}
+
+
 function print_blue(o){
         var red     = '\u001b[43m';
         var reset   = '\u001b[49m';
@@ -9,13 +15,6 @@ function print_blue(o){
         console.log(o);
         console.log(reset);       
 }
-
-if (is_node){
-    module.exports = Niyari_Vm;
-    var Debug_table = require("./debug_table");
-
-}
-
 
 
 Niyari_Vm.Func = function(addr){
@@ -159,6 +158,7 @@ Niyari_Vm.output_function = console.log;
 Niyari_Vm.set_core_function = function(env){
 
     env["display"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["display"],"display");
+    env["newline"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["newline"],"newline");
 
 
 
@@ -171,7 +171,7 @@ Niyari_Vm.set_core_function = function(env){
 
     env["not"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["not"],"not");
     env["boolean?"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["boolean?"],"boolean?");
-
+    env["boolean=?"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["boolean=?"],"boolean=?");
 
     env["cons"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["cons"],"cons");
     env["car"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["car"],"car");
@@ -204,13 +204,26 @@ Niyari_Vm.set_core_function = function(env){
     env["symbol?"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["symbol?"],"symbol?");
     env["symbol=?"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["symbol=?"],"symbol=?");
     env["symbol->string"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["symbol->string"],"symbol->string");
+    env["symbol-length"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["symbol-length"],"symbol-length");
 
+
+
+    env["string?"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["string?"],"tring?");
+    env["make-string"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["make-string"],"make-string");
+    env["string"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["string"],"string");
+    env["string-length"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["string-length"],"string-length");
 
 
 
     env["vector"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["vector"],"vector");
+    env["make-vector"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["make-vector"],"make-vector");
+    env["vector-length"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["vector-length"],"vector-length");
+    env["vector-ref"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["vector-ref"],"vector-ref");
+    env["vector-set!"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["vector-set!"],"vector-set!");
+   
 
     
+    env["procedure?"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["procedure?"],"procedure?");
     env["values"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["values"],"values");
     env["call-with-values"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["call-with-values"],"call-with-values");
     env["call/cc"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["call-with-current-continuation"],"call-with-current-continuation");
@@ -234,13 +247,16 @@ Niyari_Vm.NULL = new Niyari_Vm.Null();
 Niyari_Vm.zero = new Niyari_Vm.Integer(0);
 
 
-Niyari_Vm.Vm = function(){
+
+
+
+
+Niyari_Vm.Vm = function(vm_env){
     this.code = null;
-    this.funcs = null;
     this.global = {};
 
-    this.const_data = [];
-    this.un_evaled_cont_code = [];
+    this.vm_env = vm_env;
+
 
     this.heap = [];
     this.heap_frees = [];
@@ -287,11 +303,11 @@ Niyari_Vm.Vm = function(){
     
 
     this.init = function(){
-        while (this.non_eval_statics_ids.length>0){
-            var id = this.non_eval_statics_ids.pop();
-            var code = this.const_data[id];
+        while (this.vm_env.non_eval_statics_ids.length>0){
+            var id = this.vm_env.non_eval_statics_ids.pop();
+            var code = this.vm_env.const_data[id];
             var const_data = Niyari_Vm.const_code_expander(code);
-            this.const_data[id] = const_data;
+            this.vm_env.const_data[id] = const_data;
         }
     }
 
@@ -300,8 +316,6 @@ Niyari_Vm.Vm = function(){
     this.run = function(code){
         this.init();
 
-        console.log("!!!!!");
-        console.log("!!!!!");
         
         var stack = [];
         var code = code;
@@ -313,7 +327,7 @@ Niyari_Vm.Vm = function(){
 
 
         for (var iii=0;iii<500000;iii++){
-            console.log(iii + ":",code[addr]);
+            //console.log(iii + ":",code[addr]);
             
             var opecode = code[addr][0];
             if (opecode == "PUSH_FUN"){
@@ -350,7 +364,7 @@ Niyari_Vm.Vm = function(){
                     code = this.func_run_code;
                     addr = -1;
                 }else if (fun.type == "function"){
-                    var fun = this.funcs[fun["addr"]];
+                    var fun = this.vm_env.funcs[fun["addr"]];
                     code = fun[2];
                     addr=-1;
                     
@@ -380,7 +394,7 @@ Niyari_Vm.Vm = function(){
                 }else if (fun.type == "closure"){
                     frees = fun.free;
                     heap_addrs = fun.d_allocates;
-                    var _fun = this.funcs[fun["addr"]];
+                    var _fun = this.vm_env.funcs[fun["addr"]];
                     code = _fun[2];
                     addr = -1;
                 }else if (fun.type == "vpass"){
@@ -583,8 +597,10 @@ Niyari_Vm.Vm = function(){
             }else if (opecode == "LSET"){
                 var p = heap_addrs[code[addr][1]];
                 this.heap[p] = stack.pop();
+            }else if (opecode == "CSET"){
+                args[code[addr][1]] = stack.pop();
             }else if (opecode == "LOAD_STATIC"){
-                stack.push(this.const_data[code[addr][1]]);
+                stack.push(this.vm_env.const_data[code[addr][1]]);
             }else{
                 console.log("UNDEF_OPECODE",opecode);
                 stack.push(Niyari_Vm.bool_false);
@@ -593,11 +609,11 @@ Niyari_Vm.Vm = function(){
             
             addr++;
         }
-        console.log("STACK",stack);
+        //console.log("STACK",stack);
         var ret = stack[0];
-        console.log("\n-------------------");
-        console.log("-------------------");
-        console.log("RET\n");
+        //console.log("\n-------------------");
+        //console.log("-------------------");
+        //console.log("RET\n");
         
         var red     = '\u001b[41m';
         var reset   = '\u001b[49m';
@@ -608,9 +624,10 @@ Niyari_Vm.Vm = function(){
             }else{
             }
         }else{
-            console.log(red);
-            console.log(Niyari_Vm.printer(stack[0]));
-            console.log(reset);       
+            //console.log(red);
+            //console.log(Niyari_Vm.printer(stack[0]));
+            //console.log(reset);       
+            return Niyari_Vm.printer(stack[0]);
         }
         
     }
@@ -964,14 +981,19 @@ Niyari_Vm.funs = {};
 
 
 
-//test
-//
-//
+//lib-write(test)
 
 Niyari_Vm.funs["display"] = function(args){
     Niyari_Vm.output_function(Niyari_Vm.printer(args[1]));
     return Niyari_Vm.undef;
 }
+
+Niyari_Vm.funs["newline"] = function(args){
+    Niyari_Vm.output_function("\n");
+    return Niyari_Vm.undef;
+}
+
+
 
 
 //
@@ -1087,9 +1109,12 @@ Niyari_Vm.funs["boolean=?"] = function(args){
          args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,">=2","boolean=?");
         return Niyari_Vm.undef;
     }
-    
 
-   
+    if (args[1].data == args[2].data){
+        return Niyari_Vm.bool_true;   
+    }else{
+        return Niyari_Vm.bool_false;
+    }
 }
 
 
@@ -1575,23 +1600,158 @@ Niyari_Vm.funs["integer->char"] = function(args){
 }
 
 
+//r7rs 6.7 string
 
+Niyari_Vm.funs["string?"] = function(args){
+     if (args.length != 2){
+        args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,"1","string?");
+        return Niyari_Vm.undef;
+     }
 
-    
+     if (args[1].type == "string"){
+        return Niyari_Vm.bool_true;
+     }
+     return Niyari_Vm.bool_false;
+}
 
+Niyari_Vm.funs["make-string"] = function(args){
+    if (args.length != 2 && args.length != 3){
+        args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,"1","make-string");
+        return Niyari_Vm.undef;
+    }
+    var base_char = " ";
+    if (args[1].type != "integer"){
+        args[0] = Niyari_Vm.error_gen.wrong_type_error("integer",args[1]);
+        return Niyari_Vm.undef;
+    }else if (args.length == 3){
+        if (args[2].type != "char"){
+            args[0] = Niyari_Vm.error_gen.wrong_type_error("char",args[1]);
+            return Niyari_Vm.undef;
+        }
+        base_char = args[2].data;
+    }
+    return new Niyari_Vm.Str(Array(args[1].data+1).join(base_char));
+}
+
+Niyari_Vm.funs["string"] = function(args){
+    var ret_data = "";
+    for (var i=1;i<args.length;i++){
+        if (args[i].type != "char"){
+            args[0] = Niyari_Vm.error_gen.wrong_type_error("char",args[i]);
+            return Niyari_Vm.undef;
+        }
+        ret_data += args[i].data;
+    }
+    return new Niyari_Vm.Str(ret_data);
+}
+
+Niyari_Vm.funs["string-length"] = function(args){
+     if (args.length != 2){
+        args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,"1","string-length");
+        return Niyari_Vm.undef;
+     }
+    if (args[1].type != "string"){
+        args[0] = Niyari_Vm.error_gen.wrong_type_error("string",args[1]);
+        return Niyari_Vm.undef;
+    }
+    return new Niyari_Vm.Integer(args[1].data.length);
+}
 
 
 
 //r7rs 6.8 vector
 
+
 Niyari_Vm.funs["vector"] = function(args){
     return new Niyari_Vm.Vector(args.slice(1));
 }
 
+Niyari_Vm.funs["make-vector"] = function(args){
+    if (args.length != 2 && args.length != 3){
+         args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,"1 or 2","make-vector");
+        return Niyari_Vm.undef;
+    }
+    if (args[1].type != "integer"){
+        args[0] = Niyari_Vm.error_gen.wrong_type_error("integer",args[1]);
+        return Niyari_Vm.undef;
+    }  
+    var fill = Niyari_Vm.undef;
+    if (args.length == 3){
+        fill = args[2];
+    }
+    
+    var d = [];
+    for (var i=0;i<args[1].data;i++){
+       d.push(fill);
+    }
+    return new Niyari_Vm.Vector(d);
+}
+
+
+Niyari_Vm.funs["vector-length"] = function(args){
+    if (args.length != 2){
+          args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,"1","vector-length");
+        return Niyari_Vm.undef;
+    }
+    if (args[1].type != "vector"){
+        args[0] = Niyari_Vm.error_gen.wrong_type_error("vector",args[1]);
+        return Niyari_Vm.undef;
+    }
+    return new Niyari_Vm.Integer(args[1].data.length);
+}
+
+Niyari_Vm.funs["vector-ref"] = function(args){
+    if (args.length != 3){
+        args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,"1","vector-length");
+        return Niyari_Vm.undef;
+    }
+    if (args[1].type != "vector"){
+        args[0] = Niyari_Vm.error_gen.wrong_type_error("vector",args[1]);
+        return Niyari_Vm.undef;
+    }
+
+    if (args[2].type != "integer"){
+        args[0] = Niyari_Vm.error_gen.wrong_type_error("integer",args[2]);
+        return Niyari_Vm.undef;
+    }
+    
+    return args[1].data[args[2].data];
+}
     
 
+Niyari_Vm.funs["vector-set!"] = function(args){
+    if (args.length != 4){
+        args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,"1","vector-length");
+        return Niyari_Vm.undef;
+    }else if (args[1].type != "vector"){
+        args[0] = Niyari_Vm.error_gen.wrong_type_error("vector",args[1]);
+        return Niyari_Vm.undef;
+    }else if (args[2].type != "integer"){
+        args[0] = Niyari_Vm.error_gen.wrong_type_error("integer",args[2]);
+        return Niyari_Vm.undef;
+    }
+
+    args[1].data[args[2].data] = args[3];
+    return Niyari_Vm.undef;
+}
 
 //r7rs 6.10
+
+Niyari_Vm.funs["procedure?"] = function(args){
+    if (args.length != 2){
+         args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,"1","procedure?");
+        return Niyari_Vm.undef;
+    }
+
+    if (args[1].type == "native" ||
+        args[1].type == "continuation"||
+        args[1].type == "function"){
+        return Niyari_Vm.bool_true;
+    }
+    console.log(args[1]);
+    return Niyari_Vm.bool_false;
+}
+
 
 Niyari_Vm.funs["values"] = function(args){
     if (args[0].type == "vpass"){
@@ -1618,14 +1778,15 @@ Niyari_Vm.funs["call-with-values"] = function(args){
     return ret;
 }
 
+
+
 Niyari_Vm.funs["apply"] = function(args){
-    
     var vpass = new Niyari_Vm.Values_Pass(args[0],args[1]);
     var array = Niyari_Vm.list2array(args[2]);
     array.unshift(args[0]);
     vpass.args = array;
     args[0] = vpass;
-    return new Niyari_Vm.Bool(false);
+    return Niyari_Vm.bool_false;
 }
 
 

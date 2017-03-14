@@ -10,29 +10,42 @@ if (is_node){
 }
 
 
+Compiler.Vm_env = function(){
+    this.const_data = [];
+    this.non_eval_statics_ids = [];
+    this.funcs = [];
+}
+
+
+
+
+
 /**
  *@constructor
  *@classdesc  scm to my vmcode compiler 
  */
-Compiler.Compiler = function(){
+Compiler.Compiler = function(vm_env){
     
     this.stack = [];
     this.funcs = [];
 
-    this.statics = [];
-    this.non_eval_statics_ids = [];
+    //this.statics = [];
+    //this.non_eval_statics_ids = [];
+
+    this.vm_env = vm_env;
 
     //opetions
     this.CONFIG_INSERT_DEBUG_CODE = true;
     
     this.funcs_push = function(f){
-        this.funcs.push(f);
-        return this.funcs.length-1;
+        this.vm_env.funcs.push(f);
+        return this.vm_env.funcs.length-1;
     }
 
     this.statics_push = function(s){
-        this.statics.push(s);
-        return this.statics.length-1;
+        //this.statics.push(s);
+        this.vm_env.const_data.push(s);
+        return this.vm_env.const_data.length-1;
     }
 
 
@@ -94,7 +107,25 @@ Compiler.Compiler = function(){
                 var local = [];
                 local = local.concat(this.compile(code.cdr.cdr.car));
                 if (code.cdr.car.type == "symbol"){
-                    local.push(["GSET",code.cdr.car.data]);  
+                    var last_cell = this.stack[this.stack.length - 1];
+                    var sym = code.cdr.car.data;
+                    var local_flag = false;
+                    console.log(last_cell);
+
+                    for (var i=0;i<last_cell[0].length;i++){
+                        if (last_cell[0][i] == sym){
+                            local_flag = i + 1;
+                            break;
+                        }
+                    }
+                    if (last_cell[1] == sym){
+                        local_flag = last_cell[0].length + 1;
+                    }
+                    if (local_flag){
+                        local.push(["CSET",local_flag - 1]);
+                    }else{
+                        local.push(["GSET",code.cdr.car.data]);  
+                    }
                 }else{
                     local.push(["LSET",code.cdr.car.data]);
                 }
@@ -106,7 +137,7 @@ Compiler.Compiler = function(){
                 }else{
                     var const_code = Compiler.compile_const_list(code.cdr.car);
                     var static_addr = this.statics_push(const_code);   
-                    this.non_eval_statics_ids.push(static_addr);
+                    this.vm_env.non_eval_statics_ids.push(static_addr);
                     
                     return [["LOAD_STATIC",static_addr]];
                 }
@@ -139,6 +170,7 @@ Compiler.Compiler = function(){
                     if (local[0][i] == code.data){
                         if (this.CONFIG_INSERT_DEBUG_CODE){
                             if (code.line != -1){
+                                //index入れてる
                                 return [["LOAD_L",i,code.line]];
                             }
                         }
@@ -178,7 +210,7 @@ Compiler.Compiler = function(){
         }else if (code.type == "vector"){
           var const_code = Compiler.compile_const_vector(code.data);
           var static_addr = this.statics_push(const_code);   
-          this.non_eval_statics_ids.push(static_addr);
+          this.vm_env.non_eval_statics_ids.push(static_addr);
           return [["LOAD_STATIC",static_addr]];         
         }else if (code.type == "char"){
             return [["PUSH_CHAR",code.data]];
@@ -206,6 +238,9 @@ Compiler.Compiler = function(){
             argument.push(arg.car.data);
             arg = arg.cdr;
         }
+        // (lambda (a1 a2 a3 ... an . am)
+        //argument:[a1,a2,a3,a4, ... an]
+        //variable_argument:am
         this.stack.push([argument,variable_argument]);
 
 

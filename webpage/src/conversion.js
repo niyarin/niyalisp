@@ -11,20 +11,6 @@ if (is_node){
 
 
 
-
-Conversion.internal_env_create = function(){
-    var ret =  {"local_stack":[],
-                "local_cell_stack":[],
-                "all_symbols":{},
-                "renames":[],
-                "in_function":0,
-                 "global_syntax":{},
-                 "error":[]};
-    ret.all_symbols["lambda"] = true;
-    return ret;
-}
-
-
 Conversion.gensym = function(sym,syms){
     var ret = sym + "_";
     for (var i=0;i<100;i++){
@@ -88,65 +74,6 @@ Conversion.is_proper_list = function(ls){
 }
 
 
-Conversion.generate_syntax_error = function(txt,operator){
-    var line = parseInt(operator.line.split(" ")[0]) + 1;
-    var ret = new Lexer.Token("error",txt + "(line:" + line + " )");
-    ret.line = line
-    return ret;
-}
-
-
-
-
-Conversion.syntax_check = function(expression){
-    var operator = expression.car.data;
-
-    var is_proper_list = Conversion.is_proper_list(expression);
-    if (! is_proper_list){
-        return Conversion.generate_syntax_error("ERROR: Proper list required for syntax <" + operator + ">.",expression.car);
-    }
-
-
-    if (operator == "lambda"){
-        if (is_proper_list < 3){
-            return Conversion.generate_syntax_error("ERROR: syntax error <lambda>.",expression.car);
-        }
-    }else if (operator == "if"){
-        if (is_proper_list < 3){
-            return Conversion.generate_syntax_error("ERROR: syntax error <if>.",expression.car);
-        }
-    
-    }else if (operator == "define"){
-        if (is_proper_list < 3){
-            return Conversion.generate_syntax_error("ERROR: syntax error <define>.",expression.car);
-        }
-
-        if (expression.cdr.car.type == "symbol"){
-            if (is_proper_list != 3){
-                return Conversion.generate_syntax_error("ERROR: syntax error <define>.",expression.car);
-            }
-        }else if (expression.cdr.car.type == "pair"){
-            
-        }else{
-            return Conversion.generate_syntax_error("ERROR: syntax error <define>.",expression.car);
-            
-        }
-    }else if (operator == "set!"){
-         if (is_proper_list != 3){
-            return Conversion.generate_syntax_error("ERROR: syntax error <set!>.",expression.car);
-        }   
-    }
-
-
-
-
-    return false;
-}
-
-
-
-
-
 
 
 
@@ -196,269 +123,6 @@ Conversion.expand_begin = function(code){
 
 
 
-
-
-Conversion.internal_conversion = function(code,env){
-    if (code.car.type == "pair"){
-
-        var expression = code.car;
-        var operator = expression.car;
-        if (operator.type == "symbol"){
-             
-            operator.data = Conversion.rename(operator.data,env.renames);
-            if (operator.data == "lambda"){
-                var is_err = Conversion.syntax_check(expression);
-                if (is_err){
-                    env.error.push(is_err);
-                    return new Lexer.Pair(null,null);
-                }
-
-
-
-                var vars = expression.cdr.car;
-                var bodies = expression.cdr.cdr;
-
-
-                var renames = {};
-                {
-                    var vars_cell = vars;
-                    while (vars_cell){
-                        var token = null;
-                        if (vars_cell.type != "pair"){
-                            token = vars_cell;
-                            break;
-                        }else{
-                            token = vars_cell.car;
-                        }
-
-                        if (env.all_symbols[token.data]){
-                            var new_symbol = Conversion.gensym(token.data,env.all_symbols);
-                            renames[token.data] = new_symbol;
-                            token.data = new_symbol;
-                            env.all_symbols[new_symbol] = true;
-                        }else{
-                            env.all_symbols[token.data] = true;
-                        }
-                        vars_cell = vars_cell.cdr;
-                    }
-                }
-                
-                env.local_stack.push(vars);
-                env.renames.push(renames);
-                env.local_cell_stack.push(expression);
-                env.in_function++;
-
-                var begin_expression = Conversion.expand_begin(bodies);
-
-                expression.cdr.cdr = new Lexer.Pair(begin_expression,null);
-
-                
-                Conversion.internal_conversion(expression.cdr.cdr,env);
-
-
-                //env.local_stack.shift();
-                env.local_stack.pop();
-
-                env.renames.push(renames);
-                //env.local_cell_stack.shift();
-                env.local_cell_stack.pop();
-                env.in_function--;
-                return;
-            }else if (operator.data == "if"){
-                var is_err = Conversion.syntax_check(expression);
-                if (is_err){
-                    env.error.push(is_err);
-                    return new Lexer.Pair(null,null);
-                }               
-                Conversion.internal_conversion(expression.cdr,env);
-                Conversion.internal_conversion(expression.cdr.cdr,env);
-                Conversion.internal_conversion(expression.cdr.cdr.cdr,env);
-                return;
-            }else if (operator.data == "letrec"){
-                operator.data = "let";
-                var bindings = expression.cdr.car;
-                var new_body = new Lexer.Pair(null,null);
-                var front = new_body;
-                while (bindings){
-                    var init_data = bindings.car.cdr;
-    
-                    var new_set = new Lexer.Pair(new Lexer.Token("symbol","set!",-1),
-                                        new Lexer.Pair(bindings.car.car,
-                                        new Lexer.Pair(init_data.car,null)));
-                    bindings.car.cdr.car = new Lexer.Token("undefined","#undef",-1);
-                    bindings = bindings.cdr;
-                    
-                    new_body.cdr = new Lexer.Pair(new_set,null);
-                    new_body = new_body.cdr;
-                }
-                new_body.cdr = expression.cdr.cdr;
-                expression.cdr.cdr = front.cdr;
-
-                Conversion.internal_conversion(code,env);
-                return;
-            }else if (operator.data == "let"){
-                if (expression.cdr.car && expression.cdr.car.type == "symbol"){
-                    var name = expression.cdr.car;
-                    var inits = expression.cdr.cdr.car;
-                    var bodies = expression.cdr.cdr.cdr;
-
-                    var created_lambda = new Lexer.Pair(new Lexer.Token("symbol","lambda",-1),
-                            new Lexer.Pair(new Lexer.Pair(inits.car.car,null),
-                                bodies));
-
-
-                    expression.car.data = "letrec";
-                    expression.cdr.car = new Lexer.Pair(
-                            new Lexer.Pair(name,
-                                new Lexer.Pair(created_lambda,null)));
-                    expression.cdr.cdr = new Lexer.Pair(new Lexer.Pair(name,
-                                new Lexer.Pair(inits.car.cdr.car,null)));
-                    Conversion.internal_conversion(code,env);
-
-                }else{
-                    Conversion.syntax_converter.let2lambda(expression);
-                    Conversion.internal_conversion(code,env);
-                }
-                return;
-            }else if (operator.data == "define"){
-                var is_err = Conversion.syntax_check(expression);
-                if (is_err){
-                    env.error.push(is_err);
-                    return new Lexer.Pair(null,null);
-                }
-                var var_cell = expression.cdr;
-                var body_cell = expression.cdr.cdr;
-                
-                if (var_cell.car.type == "pair"){
-                    var fomals = var_cell.car;
-                    var lambda_cell = new Lexer.Pair(
-                                      new Lexer.Pair(new Lexer.Token("symbol","lambda",-1),
-                                                     new Lexer.Pair(fomals.cdr,
-                                                                    body_cell)),null);
-                    expression.cdr.car = fomals.car;
-                    expression.cdr.cdr = lambda_cell;
-                    Conversion.internal_conversion(code,env);
-                }else{
-                    Conversion.internal_conversion(body_cell,env);
-                    if (env.in_function){
-
-                        
-                        var local_cell = env.local_cell_stack[env.local_cell_stack.length-1];
-                        var local_cell_body = local_cell.cdr.cdr;
-
-
-                        var var_data = var_cell.car.data;
-                        if (env.all_symbols[var_data]){
-                             var new_var_data = Conversion.gensym(var_data,env.all_symbols);
-                             var local_renames = env.renames[env.renames.length-1];
-                             local_renames[var_data] = new_var_data;
-                             var_cell.car.data = new_var_data;
-                        }
-
-                        expression.car.data = "set!";
-                        var undef_token = new Lexer.Token("undefined","#undef",-1);
-                        local_cell.cdr.cdr = Conversion.create_let1(var_cell.car,undef_token,local_cell_body);
-
-                        Conversion.internal_conversion(local_cell.cdr.cdr,env);
-                    }
-                }
-                return;
-            }else if (operator.data == "set!"){
-                var is_err = Conversion.syntax_check(expression);
-                if (is_err){
-                    env.error.push(is_err);
-                    return new Lexer.Pair(null,null);
-                }
-                var sym = expression.cdr.car.data;
-                if (env.local_stack.length > 0){
-                    var vars = env.local_stack[env.local_stack.length-1];
-                    while (vars){
-                        if (vars.car.data == sym){
-                            var prev_lambda_expression = env.local_cell_stack[env.local_cell_stack.length-1];
-                            var new_expression = 
-                                Conversion.array_expand([new Lexer.Token("symbol","let",-1),
-                                                        null]);
-                            
-                            new_expression.cdr.cdr = prev_lambda_expression.cdr.cdr;
-                            prev_lambda_expression.cdr.cdr = new Lexer.Pair(new_expression,null);
-                            Conversion.internal_conversion(prev_lambda_expression.cdr.cdr,env);
-
-
-                            break;
-                        }
-                        vars = vars.cdr;
-                    }
-                }
-            }else if (operator.data == "begin"){
-                var begin_body = Conversion.expand_begin(expression.cdr);
-                code.car = begin_body;
-                Conversion.internal_conversion(code,env);
-                return;
-            }else if (operator.data == "quote"){
-                if (expression.cdr.car.type == "pair"){
-                
-                }else if (expression.cdr.car.type == "symbol"){
-
-                }else{
-                    code.car = expression.cdr.car;
-                }
-
-                return;
-            }else if (operator.data == "quasiquote"){
-                code.car = Conversion.expand_quasiquote(expression);
-                Conversion.internal_conversion(code,env);
-                return;
-            }else if (operator.data == "define-syntax"){
-                var name = expression.cdr.car.data;
-                var syntax_rules_exp = expression.cdr.cdr.car;
-                var rule_obj = Syntax_rules.convert_rules(syntax_rules_exp);
-
-                if (typeof rule_obj == "string"){
-                    env.error.push(rule_obj);
-                    return;
-                }
-                env.global_syntax[name] = rule_obj;
-                code.car = null;
-                return;
-            }else if (operator.data == "import"){
-                
-                return;
-            }else if (operator.data == "define-record-type"){
-                Conversion.def_record_expander(expression);
-                return;
-            }
-
-            if (env.global_syntax[operator.data]){
-                
-                var rule_obj = env.global_syntax[operator.data];
-                var ret = Syntax_rules.match_and_convert(rule_obj,expression);
-                code.car = ret;
-
-            
-            }
-
-
-
-        }else if (operator.type == "pair"){
-            Conversion.internal_conversion( code.car ,env);
-        }
-
-
-
-        
-        var fun_args = expression.cdr;//cdr -> cdr.car?
-        while (fun_args){
-            Conversion.internal_conversion(fun_args,env);
-            fun_args = fun_args.cdr;
-        }
-
-    }else{
-        var atom = code.car;
-        if (atom.type == "symbol"){
-            code.car.data = Conversion.rename(code.car.data,env.renames);
-        }
-    }
-}
 
 
 Conversion.expand_quasiquote = function(exp){
@@ -546,45 +210,48 @@ Conversion.def_record_expander = function(exp){
 
 }
 
+    
 
 
-Conversion.cpsconv_env_create = function(){
-    return {
-        "all_symbols":{}
-    };
-}
+
 
 
 
 
 
 Conversion.Cps_converter = function(){
-    this.convert = function (code,next,env){
+
+
+    this.gensym = function(sym,symbols){
+        for (var i=0;i<10000;i++){
+            var ret = sym + "$" + i;
+            if (!symbols[ret]){
+                return ret;
+            }
+        }
+        errrorrrrrrr();
+        return null;
+    }
+
+
+    this.convert = function(code,next,symbols){
         if (code.type == "pair"){
             if (code.car.type == "pair"){
 
             }else if (code.car.type == "symbol"){
                 var operator = code.car.data;
                 if (operator == "lambda"){
-                    return this.convert_lambda(code,next,env);            
-                }else if (operator == "let"){
-                
+                    return this.convert_lambda(code,next,symbols);
                 }else if ((operator == "define" || operator == "set!")){
-                    //return this.define_conversion(code,next,env);
-                     //var ret = this.convert_func_run(code,next,env);
-                     var ret = this.def_set_conversion(code,next,env);
+                     var ret = this.def_set_conversion(code,next,symbols);
                      return ret;
-                    /*
-                    var body_cell = code.cdr.cdr;
-                    body_cell.car = this.convert(body_cell.car,next,env);
-                    return code;*/
                 }else if (operator == "if"){
-                    return this.if_conversion(code,next,env);
+                    return this.if_conversion(code,next,symbols);
                 }else if (operator == "quote"){
                     return code;
                 }
             }       
-            var func_run = this.convert_func_run(code,next,env);
+            var func_run = this.convert_func_run(code,next,symbols);
             return func_run;       
             //return new Lexer.Pair(new Lexer.Token("symbol","#undef",-1),null);
         
@@ -597,23 +264,27 @@ Conversion.Cps_converter = function(){
 
 
 
-    this.def_set_conversion = function(code,next,env){
+
+    this.def_set_conversion = function(code,next,symbols){
         var sym = code.cdr.car;
+
         var body = code.cdr.cdr.car;
+
         if (body.type != "pair" ){
             return code;
         }
 
-       var new_sym = Conversion.gensym("p",env.all_symbols);
+       var new_sym = Conversion.gensym("p",symbols);
        var new_sym_token = new Lexer.Token("symbol",new_sym,-1);
-       env.all_symbols[new_sym] = true;
+
+       symbols[new_sym] = true;
        
        code.cdr.cdr.car = new_sym_token;
        
 
        var new_body = new Lexer.Pair(next,new Lexer.Pair(code,null));
        var lmd = this.create_cont_lambda(new_body,new_sym_token);
-       var converted_body = this.convert(body,lmd,env);
+       var converted_body = this.convert(body,lmd,symbols);
        
 
        if (this.not_procedure(body)){
@@ -625,26 +296,23 @@ Conversion.Cps_converter = function(){
     }
 
 
+    this.if_conversion = function(code,next,symbols){
 
-        
-
-
-    this.if_conversion = function(code,next,env){
         var test_expression = code.cdr.car;
-       var new_sym = Conversion.gensym("p",env.all_symbols);
-       env.all_symbols[new_sym] = true;
+
+       var new_sym = this.gensym("test",symbols);
+       symbols[new_sym] = true;
        var new_sym_token = new Lexer.Token("symbol",new_sym,-1);
 
         code.cdr.car = new_sym_token;
         var lmd =this.create_cont_lambda(code,new_sym_token);
-        var ret = this.convert(test_expression ,lmd,env);
+        var ret = this.convert(test_expression ,lmd,symbols);
         
-        var converted_true_case = this.convert(code.cdr.cdr.car,next,env);
-        var converted_false_case = this.convert(code.cdr.cdr.cdr.car,next,env);
+        var converted_true_case = this.convert(code.cdr.cdr.car,next,symbols);
+        var converted_false_case = this.convert(code.cdr.cdr.cdr.car,next,symbols);
         if (this.not_procedure(ret)){
             ret = code;
             code.cdr.car = test_expression;
-
         }
 
         if (this.not_procedure(converted_true_case)){
@@ -663,36 +331,21 @@ Conversion.Cps_converter = function(){
 
 
 
-    this.convert_lambda = function(code,next,env){
+    this.convert_lambda = function(code,next,symbols){
         // (lambda (a1 ... an) exp) -> (lambda (k a1 ... an) (k exp))
-
-
-        var cont_sym_token = this.generate_symbol("k",env.all_symbols);
-        cont_sym_cell = new Lexer.Pair(cont_sym_token,null);
-
-        var new_sym = Conversion.gensym("p",env.all_symbols);
-        env.all_symbols[new_sym] = true;
-        var new_sym_token = new Lexer.Token("symbol",new_sym,-1);
-
-        //(a1 ... an) -> (k a1 ... an)
+        //formsに新しく生成したシンボルをheadに加える
+        var generated_symbol = this.gensym("cont",symbols);
+        symbols[generated_symbol] = true;
+        var cont_sym_token = new Lexer.Token("symbol",generated_symbol,-1);
+        var cont_sym_cell = new Lexer.Pair(cont_sym_token,null);
         cont_sym_cell.cdr = code.cdr.car;
         code.cdr.car = cont_sym_cell;
 
+        var body = code.cdr.cdr.car;//無限ループした??
+        var compiled_body = this.convert(body,cont_sym_cell.car,symbols);
+        
 
-        var body = code.cdr.cdr.car;
-        /*
-         bodyをconvertすると無限ループする
-         */
-       
-
-        //var is_not_proc = this.not_procedure(body);
-        var compiled_body = this.convert(body,cont_sym_cell.car,env);
         var is_not_proc = this.not_procedure(compiled_body);
-
-
-
-
-
 
         if (is_not_proc ){
             var apply_cont_code =  new Lexer.Pair(cont_sym_token,new Lexer.Pair(compiled_body,null));
@@ -700,7 +353,6 @@ Conversion.Cps_converter = function(){
         }else{
             code.cdr.cdr = new Lexer.Pair(compiled_body,null);
         }
-
         return code;
     }
     
@@ -720,7 +372,7 @@ Conversion.Cps_converter = function(){
 
 
 
-    this.convert_func_run = function(code,next,env){
+    this.convert_func_run = function(code,next,symbols){
         var args = code.cdr;
 
         var org = code
@@ -733,11 +385,12 @@ Conversion.Cps_converter = function(){
 
         while (args){
            if (args.car.type == "pair"){
+               //行番号を取得しておく
                var line_d = Conversion.search_org_var_position(args.car);
 
-               
-               var new_sym = Conversion.gensym("p",env.all_symbols);
-               env.all_symbols[new_sym] = true;
+               var new_sym = this.gensym("arg",symbols);
+               symbols[new_sym] = true;
+
 
                var new_sym_token = new Lexer.Token("symbol",new_sym,line_d);
                if (line_d != -1){
@@ -748,25 +401,12 @@ Conversion.Cps_converter = function(){
                var lmd = this.create_cont_lambda(body,new_sym_token);
 
                var prev_body = body;
-               body = this.convert(args.car,lmd,env);
+               body = this.convert(args.car,lmd,symbols);
 
-               /*
-               if (this.not_procedure(body)){
-                 org.cdr = new Lexer.Pair(body,null);
-                 body = prev_body;
-               }else{
-               }*/
                if (this.not_procedure(body)){
                   org.cdr = new Lexer.Pair(body,null);
                   body = prev_body;
                }else{
-                   /*
-                   if (this.not_procedure(args.car)){
-                       
-                   }else{
-                   
-                   }
-                   */
                }
 
                org = org.cdr;
@@ -781,16 +421,16 @@ Conversion.Cps_converter = function(){
 
         if (org_top.car.type == "pair"){
             // ( ( x ... ) arg1 arg2 ... argn)
+            var new_sym = this.gensym("proc",symbols);
+            symbols[new_sym] = true;
 
-            var new_sym = Conversion.gensym("p",env.all_symbols,-1);
-            env.all_symbols[new_sym] = true;
             var new_sym_token = new Lexer.Token("symbol",new_sym,-1);
 
             var lmd = this.create_cont_lambda(body,new_sym_token);
             
             var prev_body = body;
-
-            var body = this.convert(org_top.car,lmd,env);
+    
+            var body = this.convert(org_top.car,lmd,symbols);
 
             if (body.car.data == "lambda"){
                 org_top.car = body;
@@ -800,10 +440,9 @@ Conversion.Cps_converter = function(){
                 org_top.car = new_sym_token;   
             }
         }
-        
-
         return body;
     }
+
 
     this.reverse_list = function(cell,ret){
         if (cell == null){
@@ -822,12 +461,8 @@ Conversion.Cps_converter = function(){
         syms[new_sym] = true;
         return new Lexer.Pair(new Lexer.Token("symbol",new_sym,-1),null);
     }
+    
 
-    this.generate_symbol = function(base,syms){
-         var new_sym = Conversion.gensym(base,syms);
-         syms[new_sym] = true;
-         return new Lexer.Token("symbol",new_sym,-1);
-    }
 
     this.create_cont_lambda = function(body,var_token){
         var lambda_cell = new Lexer.Pair(new Lexer.Token("symbol","lambda",-1,"cont"),null);
@@ -839,28 +474,19 @@ Conversion.Cps_converter = function(){
         return lambda_cell;
     }
 
-
-    //後で消す↓ 
-    this.shallow_copy = function(ls){
-        var cell = ls;
-        var ret = new Lexer.Pair(null,null);
-        var front = ret;
-        while (ls){
-        ret.cdr = new Lexer.Pair(ls.car,null);
-        ret = ret.cdr;
-        ls = ls.cdr;
-        }
-        return front.cdr;
-    }
-
-
-
 }
 
+
+
+
 Conversion.search_org_var_position = function(code){
+    
     var cell = code;
     while (cell){
-        if (cell.car.type != "symbol"){
+        if (!cell.car){
+
+        }else if (cell.car.type != "symbol"){
+
         }else if (cell.car.line != -1){
             return cell.car.line;
         }
@@ -872,11 +498,17 @@ Conversion.search_org_var_position = function(code){
 
 
 
-
+/*
+ *set!されるものを取り出す。
+ */
 Conversion.catch_assignment_vars = function(code,ret){
+    if (!code){
+        return;
+    }
     if (code.type == "pair"){
         var operator = code.car;
         if (operator.type == "pair"){
+
         }else{
             var ope = operator.data;
 
@@ -942,14 +574,14 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
     this.all_symbols = all_symbols;
     this.stack = [];
     this.roots = roots;
-    this.let_marker = false;
+    this.operator_flag = false;
     this.d_assignment_vars = {};
 
     for (var i=0;i<d_assignment_vars.length;i++){
         this.d_assignment_vars[d_assignment_vars[i]] = true;
     }
 
-
+    //symbolを自由変数かset!されるかそれ以外かにぶんるいする
     this.search_free = function(sym){
         var d_vars = this.d_assignment_vars;
         var rec = function(pos,stack){
@@ -965,7 +597,11 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
             for (var i=0;i<vars.length;i++){
                 if (vars[i] == sym){
                     if (d_vars[sym]){
+                        //この2行用検証(これをonにすると一番外側の関数でもclosure conversionが実行されるので、別の場所でエラーが生じる)
+                        //
+                        //
                         //env.change_var[sym] = true;
+                        //env.frees[sym] = false;
                         return -1;
                     }
                     return 1;
@@ -999,23 +635,31 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
                     this.stack.push(env);
                     
                     var closure_conversion_flag = true;
-                    if (this.let_marker){
-                        this.let_marker = false;
+                    if (this.operator_flag){
+                        //operator_flagがtrueだと、関数は拘束されないのでlambda-liftingできる可能性がある。
+                        //clocure_conversion_flagをfalseにする
+                        this.operator_flag = false;
                         closure_conversion_flag = false;
                     }else{
                     
                     }
 
 
-
+                    
+                    /*
                     var bodies = code.cdr.cdr;
                     while(bodies){
                         this.convert(bodies.car);
                         bodies = bodies.cdr;
-                    }
+                    }*/
+                    var body = code.cdr.cdr.car;
+                    this.convert(body);//このなかでenv.change_varとかenv.freesを更新したりするよ
+                    
+
 
                     
                     if (!closure_conversion_flag){
+                      //自由変数がそんざいするか、自由変数に破壊的変更が加えられる
                         if (Object.keys(env.frees).length > 0||Object.keys(env.change_var).length > 0){
                             closure_conversion_flag = true;
                         }
@@ -1025,6 +669,7 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
                     if (closure_conversion_flag){
                         this.closure_conversion(code,this.prev);
                     }
+
                     return;
                 }else if (operator == "set!"){
                     this.search_free(code.cdr.car.data);
@@ -1064,8 +709,10 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
                     this.search_free(code.car.data)
                 }
                 
+                
+                //operatorがlistである。
                 if (let_flag){
-                    this.let_marker = true;
+                    this.operator_flag = true;
                     this.convert(code.car);
                     
                     if (code.car.car.data == "lambda"){
@@ -1132,6 +779,7 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
     }
     
     this.closure_conversion = function(lambda,free_var){
+
         var _tmp_frees = Object.keys(free_var.frees);
         _tmp_frees.sort();
 
@@ -1173,10 +821,13 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
                 list_write(changes_list);
             }
 
-            lambda.car.data = "#closure";
+            //lambda.car.data = "#closure";
+            lambda.car = new Lexer.Token("symbol","#closure",-1);
             lambda.cdr = new Lexer.Pair(save_lambda,null);
             lambda.cdr.cdr = new Lexer.Pair(new Lexer.Pair(free_list,changes_list),null);
-            
+
+
+
         }
     }
 
@@ -1271,9 +922,10 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
             if (e.frees[sym]){
                 e.change_var[sym] = true;
                 this.search_update_change_var(sym,pos-1,0);
+            }else{
+
             }
         }
-        
     }
 
 
@@ -1325,6 +977,8 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
 
     this.convert_change_vars_to_list = function(changes){
         //1個外側の環境にアクセスする
+
+        //closure_conversionは一番外側の階層では行われないという保証が必要
         var prev_e = this.stack[this.stack.length-1];          
         var _prev_changes = Object.keys(prev_e.change_var);
         _prev_changes.sort();
@@ -1334,7 +988,8 @@ Conversion.Closure_converter = function(all_symbols,roots,d_assignment_vars){
         for (var i=0;i<changes.length;i++){
             var sym_data = undefined;
             if (prev_e.change_var[changes[i]]){
-                for (var index=0;index<_prev_changes.length;index++){
+               //一つ下の階層で使われていた場合、そのあどれすを使う。
+               for (var index=0;index<_prev_changes.length;index++){
                     if (_prev_changes[index] == changes[i]){
                        sym_data = new Lexer.Pair(new Lexer.Token("symbol","#loadaddr"),
                           new Lexer.Pair(new Lexer.Token("integer",index),null));

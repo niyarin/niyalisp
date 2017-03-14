@@ -1,0 +1,18 @@
+
+input.nterm {
+    width:300px;
+    border:none;
+
+    background-color:#333333;
+    color:#FFFFFF;
+}
+
+div.nterm {
+    width:400px;
+    height:300px;
+    border:solid 1px;
+    overflow: scroll; 
+    text-align:left;
+    background-color:#333333;
+    color:#FFFFFF;
+}

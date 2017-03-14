@@ -261,8 +261,11 @@ Lexer.convert_list = function(code){
                 return new Lexer.Pair(is_dot_list,null);
             }
             return new Lexer.Pair(new Lexer.Token("vector",vector.car,-1),null);
+        }else if (c.data == ","){
+             
+        }else if (c.data == ",@"){
+        
         }
-            
 
         var ret = new Lexer.Pair(c,null);
         return ret;

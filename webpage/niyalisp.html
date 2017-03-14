@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html lang=”ja”>
     <head>
-        <meta charset=”UTF-8″>
-        <title>Niyalisp -niyari's scheme implementation</title>
-
+        <meta charset=”utf-8″>
+        <title>Niyalisp -niyarin's scheme implementation</title>
+        
+        <!-- load niyalisp -->
         <script src="src/lexer.js"></script>
         <script src="src/compiler.js"></script>
         <script src="src/syntax_rules.js"></script>
@@ -11,6 +12,15 @@
         <script src="src/debug_table.js"></script>
         <script src="src/niyari_vm.js"></script>
         <script src="src/main.js"></script>
+        <script src="src/syntax_converter.js"></script>
+
+        <script src="src/interface.js"></script>
+
+        <!-- load niya-term  -->
+       <link rel="stylesheet" type="text/css" href="niya-term/niya-term.css">
+       <script src="niya-term/niya-term.js"></script>
+
+
     </head>
     <body>
         <div id="main" style="text-align:center;">
@@ -20,38 +30,26 @@
             <hr width="800px">
             かなり未完成です<br>
             <hr width="500px">
+            
+            REPL<br><br>
             <br>
-            コード<br>
-            <textarea id="input" style="width:400px;height:300px;">
-(define (fact n)
-  (if (= n 1)
-    1
-    (* n (fact (- n 1)))))
-(display
-    (fact 10))
-            </textarea>
-            <br><br><br>
-            <button type="button" style="width:200px;height:50px" onClick="run_code()">RUN</button>
-            <br><br>
-            出力結果<br>
-            <textarea id="output"></textarea>
-            <br><br>
-            <hr width="800px">
-        </div>
+            <div style="width:410px;margin:0 auto;">
+            <div class="nterm" id ="niyalisp_term" onclick="onclick_term(event);">
+                <input class="nterm" onkeypress="on_key(event);"  autofocus></input>
+            </div>
+            </div>
 
-        <script>
-            //onclick
-            function run_code(){
-                document.getElementById("output").value = "";
-                var code = document.getElementById("input").value;
-                console.log(code);
-                Interface.run_from_file(code,output);
-            }
 
-            function output(txt){
-                var textarea = document.getElementById("output");
-                textarea.value+=txt;
-            }
-        </script>
+            <script> 
+                var niyalisp_term = create_niya_term_wrapper(document.getElementById("niyalisp_term"));
+                Interface.browser.repl(niyalisp_term);
+            </script>
+
+
+
+
+
+
+            <br>
     </body>
 </html>
