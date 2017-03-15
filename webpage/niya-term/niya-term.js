@@ -21,6 +21,10 @@ function term_update(term,input){
 
 
 function term_print(nterm,data){
+    if (typeof data!= "string"){
+        return;
+    }
+
     var elems = [];
     var s = "";
     for (var i=0;i<data.length;i++){

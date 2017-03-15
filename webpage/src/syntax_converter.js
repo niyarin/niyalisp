@@ -673,6 +673,8 @@ Syntax_converter.Syntax.import = function(){
     }
 }
 
+
+
 Syntax_converter.Syntax.define_library = function(){
    this.syntax_check = function(code){
        return false;
@@ -680,7 +682,10 @@ Syntax_converter.Syntax.define_library = function(){
 
 
    this.convert = function(code,env,next_converter){
-        
+       var library_name = code.cdr.car;
+       var new_env = new Syntax_converter.Env.Syntax_Env();
+
+
        exit();
    }
 }

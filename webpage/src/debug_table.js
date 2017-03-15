@@ -10,7 +10,7 @@ if (is_node){
 
 
 
-Debug_table.look_history = function(c_hist,m_hist,vm){
+Debug_table.look_history = function(c_hist,m_hist,vm,output){
     var ret = "";
     for (var i=m_hist.length-1;i>-1;i--){
         var mh = m_hist[i];
@@ -18,8 +18,8 @@ Debug_table.look_history = function(c_hist,m_hist,vm){
             ret += Debug_table.look_machine_code(mh,c_hist[i],vm) + "\n";
         }
     }
-    console.log("\n----CALL HISTORY----\n\n");
-    console.log(ret);
+    output("\n----CALL HISTORY----\n\n");
+    output(ret);
     
 }
 

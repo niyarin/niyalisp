@@ -669,8 +669,9 @@ Niyari_Vm.const_code_expander = function(code){
 
 
 Niyari_Vm.error_printer = function(error_mes,call_hist,code_hist,vm){
-    console.log(error_mes);
-    Debug_table.look_history(call_hist,code_hist,vm);
+    //console.log(error_mes);
+    Niyari_Vm.output_function(error_mes);
+    Debug_table.look_history(call_hist,code_hist,vm,Niyari_Vm.output_function);
 }
 
 
