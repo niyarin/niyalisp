@@ -423,7 +423,91 @@ Syntax_converter.Syntax.include = function(reader){
 
 //4.2.1
 
+//Syntax_converter.Share_object.begin_converter = new Syntax_converter.Syntax.begin();
 //cond
+Syntax_converter.Syntax.cond = function(){
+    this.syntax_check = function(code){
+        return false;
+    }
+    
+    this.convert = function(code,env,next_converter){
+        var clause = code.cdr.car;           
+
+        var clause_head = code.cdr.car.car;
+        if (clause_head.type == "symbol"){
+            var q = env.search_syntax(clause_head.data);
+            if (q && q.type == "else"){
+                return Syntax_converter.Share_object.begin_converter.convert(clause,env,next_converter);    
+            }
+        }
+            
+        var next_cond = null;
+        if (code.cdr.cdr){
+            next_cond = new Lexer.Pair(code.car,code.cdr.cdr);
+            next_cond = this.convert(next_cond,env,next_converter);
+        }
+        
+
+        var undef  = Syntax_converter.Share_object.undef;
+        if (clause.type == "pair"){
+            var tmp_symbol = new Lexer.Token("symbol","tmp",-1);
+            var v1 = new Syntax_rules.Symbol_env(tmp_symbol,null,-1,0);
+            var v2 = new Syntax_rules.Symbol_env(tmp_symbol,null,-1,0);
+            var v3 = new Syntax_rules.Symbol_env(tmp_symbol,null,-1,0);
+
+
+            if (clause.cdr && clause.cdr.cdr && clause.cdr.car.type == "symbol"){
+                var center = env.search_syntax(clause.cdr.car.data);
+                if (center.type == "=>"){
+                    var test = next_converter(clause.car,env);
+                    var result = next_converter(clause.cdr.cdr.car,env);
+                    
+                    if (next_cond){
+                        var if_expression = new Lexer.Pair(Syntax_converter.Share_object.if,new Lexer.Pair(v2,new Lexer.Pair(new Lexer.Pair(result,new Lexer.Pair(v1,null)),new Lexer.Pair(next_cond,null))));
+                        var lambda_expression = Syntax_converter.utils.generate_lambda([v3],new Lexer.Pair(if_expression,null));
+                        Syntax_rules.hygenic_convert(lambda_expression);
+                        var ret = new Lexer.Pair(lambda_expression,new Lexer.Pair(test,null));
+                        return ret;
+                    }else{
+                        var if_expression = new Lexer.Pair(Syntax_converter.Share_object.if,new Lexer.Pair(v2,new Lexer.Pair(new Lexer.Pair(result,new Lexer.Pair(v1,null)),new Lexer.Pair(undef,null))));
+                        var lambda_expression = Syntax_converter.utils.generate_lambda([v3],new Lexer.Pair(if_expression,null));
+                        Syntax_rules.hygenic_convert(lambda_expression);
+                        var ret = new Lexer.Pair(lambda_expression,new Lexer.Pair(test,null));
+                        return ret;
+                    }
+                }
+            }
+
+            if (!clause.cdr){
+                if (next_cond){
+                    var if_expression = new Lexer.Pair(Syntax_converter.Share_object.if,new Lexer.Pair(v2,new Lexer.Pair(v2,new Lexer.Pair(next_cond,null))));
+                    var lambda_expression = Syntax_converter.utils.generate_lambda([v3],new Lexer.Pair(if_expression,null));
+                    Syntax_rules.hygenic_convert(lambda_expression);
+                    var ret = new Lexer.Pair(lambda_expression,new Lexer.Pair(clause.car,null));
+                    return ret;
+                }else{
+                    return clause.car;
+                }
+            }
+            
+            var test = next_converter(clause.car,env);
+            var begin_expression = Syntax_converter.Share_object.begin_converter.convert(new Lexer.Pair("BEGIN-DAYO!",clause.cdr),env,next_converter);
+
+
+            if (next_cond){
+                var if_expression = new Lexer.Pair(Syntax_converter.Share_object.if,new Lexer.Pair(test,new Lexer.Pair(begin_expression,new Lexer.Pair(next_cond,null))));
+                return if_expression;
+            }else{
+                var if_expression = new Lexer.Pair(Syntax_converter.Share_object.if,new Lexer.Pair(test,new Lexer.Pair(begin_expression,new Lexer.Pair(undef,null))));
+                return if_expression;
+            }
+        }
+        error();
+    }
+}
+
+
+
 
 //case
 
@@ -691,8 +775,16 @@ Syntax_converter.Syntax.define_library = function(){
 }
 
 
+//
+//  SYMBOLS(else =>) 
+//
+Syntax_converter.Syntax.else = function(){
+    this.type = "else";
+}
 
-
+Syntax_converter.Syntax.right_arrow = function(){
+    this.type = "=>";
+}
 
 
 
@@ -833,6 +925,7 @@ Syntax_converter.set_r7rs_scheme_base = function(env){
 
     //4.2.1
     //cond case
+    env.global_syntax["cond"] = new Syntax_converter.Syntax.cond();
     env.global_syntax["and"] = new Syntax_converter.Syntax.and();
     env.global_syntax["or"] = new Syntax_converter.Syntax.or();
     //4.2.2
@@ -866,6 +959,10 @@ Syntax_converter.set_r7rs_scheme_base = function(env){
     //5.4
     env.global_syntax["define-syntax"] = new Syntax_converter.Syntax.define_syntax();
 
+
+    //symbols
+    env.global_syntax["else"] = new Syntax_converter.Syntax.else();
+    env.global_syntax["=>"] = new Syntax_converter.Syntax.right_arrow();
 }
 
 
