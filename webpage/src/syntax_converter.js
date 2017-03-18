@@ -59,7 +59,7 @@ function list_write(list,nest){
             console.log("#");
             list_write(list.data,nest);
         }else if (list.type == "symbol-env"){
-            var d = "<E-"+list.data + ">";
+            var d = "<E-"+list.data + "(" + list.tag + ")" + ">";
             console.log(Array(nest+1).join(" "),d);
         }else if (list.type == "string"){
             console.log('"' + list.data + '"');
@@ -119,6 +119,7 @@ Syntax_converter.utils.generate_let = function(inits,body_cell){
 
 Syntax_converter.utils.generate_lambda = function(formals,body_cell){
     var formal_cell = new Lexer.Pair(null,null);
+
     var formal_cell_head = formal_cell;
     for (var i=0;i<formals.length;i++){
         formal_cell.cdr = new Lexer.Pair(formals[i],null);
@@ -144,6 +145,7 @@ Syntax_converter.Syntax.Syntax_token = function(syntax_name){
     this.type = "syntax";
     this.data = syntax_name;
 }
+
 
 
 
@@ -209,7 +211,7 @@ Syntax_converter.Syntax.begin = function(){
         }
         //サイズが1のケース
         if (!code.cdr.cdr){
-            return next_converter(code.cdr.car,env);
+            return next_converter(code.cdr.car,env,next_converter);
         }
 
 
@@ -445,8 +447,7 @@ Syntax_converter.Syntax.include = function(reader){
 
 //4.2.1
 
-//Syntax_converter.Share_object.begin_converter = new Syntax_converter.Syntax.begin();
-//cond
+
 Syntax_converter.Syntax.cond = function(){
     this.syntax_check = function(code){
         return false;
@@ -584,6 +585,70 @@ Syntax_converter.Syntax.or  = function(){
         }   
     }
 }
+
+Syntax_converter.Syntax.when = function(){
+    this.syntax_check = function(code){
+        if (!code.cdr && !code.cdr.cdr){
+            return "ERROR:syntax error <when>";
+        }
+        return false;
+    }
+
+    this.convert = function(code,env,next_converter){
+        var test = next_converter(code.cdr.car,env);
+        var cell = code.cdr.cdr;
+        var new_body = new Lexer.Pair(null,null);
+        var new_body_head = new_body;
+        while (cell){
+            new_body.cdr = new Lexer.Pair(next_converter(cell.car,env),null);
+            new_body = new_body.cdr;
+            cell = cell.cdr;
+        }
+        new_body = Syntax_converter.Share_object.begin_converter.convert(new_body_head,env,next_converter);
+        return new Lexer.Pair(Syntax_converter.Share_object.if_token,new Lexer.Pair(test,new Lexer.Pair(new_body,new Lexer.Pair(Syntax_converter.Share_object.undef,null))));
+    }
+}
+
+Syntax_converter.Syntax.unless = function(){
+    this.syntax_check = function(code){
+        if (!code.cdr && !code.cdr.cdr){
+            return "ERROR:syntax error <unless>";
+        }
+        return false;
+    }
+
+    this.convert = function(code,env,next_converter){
+        var test = next_converter(code.cdr.car,env);
+        var cell = code.cdr.cdr;
+        var new_body = new Lexer.Pair(null,null);
+        var new_body_head = new_body;
+        while (cell){
+            new_body.cdr = new Lexer.Pair(next_converter(cell.car,env),null);
+            new_body = new_body.cdr;
+            cell = cell.cdr;
+        }
+        new_body = Syntax_converter.Share_object.begin_converter.convert(new_body_head,env,next_converter);
+        return new Lexer.Pair(Syntax_converter.Share_object.if_token,new Lexer.Pair(test,new Lexer.Pair(Syntax_converter.Share_object.undef,new Lexer.Pair(new_body,null))));
+    }
+}
+
+
+
+Syntax_converter.Syntax.cond_expand = function(){
+    this.syntax_check = function(code){
+        return fallse;
+    }
+
+    this.convert = function(code,env,next_converter){
+        return null;
+    }
+}
+
+
+
+
+
+
 
 //4.2.2
 
@@ -729,21 +794,155 @@ Syntax_converter.Syntax.letrec = function(){
 }
 
 
-Syntax_converter.Syntax.let_values = function(){
-    this.sntax_check = function(code){
-      return false;
-    }
 
+Syntax_converter.Syntax.letrec_star = function(){
+    //let*
+    this.syntax_check = Syntax_converter.Share_object.let_converter.syntax_check;
     this.convert = function(code,env,next_converter){
-            
+      
+        if (code.cdr.car == null){
+          var rr =  Syntax_converter.Share_object.let_converter.convert(new Lexer.Pair(code.car,
+                                          new Lexer.Pair(null,code.cdr.cdr)),env,next_converter);
+          return rr;
+        }else{
+          var next = new Lexer.Pair(code.car,
+                        new Lexer.Pair(code.cdr.car.cdr,code.cdr.cdr));
 
-        
-
-
-        exit();
+          return Syntax_converter.Share_object.letrec_converter.convert(new Lexer.Pair(code.car,
+                 new Lexer.Pair(new Lexer.Pair(code.cdr.car.car,null),new Lexer.Pair(next,null) )),env,next_converter);
+        }
     }
 }
 
+
+
+
+Syntax_converter.Syntax.let_values = function(){
+    this.syntax_check = function(code){
+      return false;
+    }
+
+    this.tmp_convert = function(x,y,args,bindings,tmp,body,env,next_converter,cnt){
+        if (!x){
+            var lmd1 = new Lexer.Pair("lmd",new Lexer.Pair(null,new Lexer.Pair(y,null)));
+            lmd1 = Syntax_converter.Share_object.lambda_converter.convert(lmd1,env,next_converter);
+            var next = this.bind_convert(bindings,tmp,body,env,next_converter,cnt+1);
+            var lmd2 = new Lexer.Pair("lmd",new Lexer.Pair(args,new Lexer.Pair(next,null)));
+            lmd2 = Syntax_converter.Share_object.lambda_converter.convert(lmd2,env,next_converter);
+            
+            var ret = new Lexer.Pair(new Lexer.Token("symbol","call-with-values",-1),new Lexer.Pair(lmd1,new Lexer.Pair(lmd2,null)));
+            return ret;   
+        }else if (x.type == "pair"){
+            //argsはコピー済みであること
+            var cell = args;
+            while (cell && cell.cdr){
+                cell = cell.cdr;
+            }
+            var tmp_sym = new Lexer.Token("symbol","tmp",-1);
+            var tmp_symbol = new Syntax_rules.Symbol_env(tmp_sym,null,-1,cnt+1);
+            var tmp_symbol2 = new Syntax_rules.Symbol_env(tmp_sym,null,-1,cnt+1);
+            if (cell){
+                cell.cdr = new Lexer.Pair(tmp_symbol,null);
+            }else{
+                args = new Lexer.Pair(tmp_symbol,null);
+            }
+            
+            cell = tmp;
+            while (cell && cell.cdr){
+                cell = cell.cdr;
+            }
+            if (cell){
+                cell.cdr = new Lexer.Pair(new Lexer.Pair(x.car,new Lexer.Pair(tmp_symbol2,null)),null);
+            }else{
+                tmp = new Lexer.Pair(new Lexer.Pair(x.car,new Lexer.Pair(tmp_symbol2,null)),null);
+            }
+            return this.tmp_convert(x.cdr,y,args,bindings,tmp,body,env,next_converter,cnt+1);
+        }else if (x.type == "symbol"){
+            var lmd1 = new Lexer.Pair("lmd",new Lexer.Pair(null,new Lexer.Pair(y,null)));
+            lmd1 = Syntax_converter.Share_object.lambda_converter.convert(lmd1,env,next_converter);
+            
+            var tmp_sym = new Lexer.Token("symbol","tmp",-1);
+            var tmp_symbol = new Syntax_rules.Symbol_env(tmp_sym,null,-1,cnt+1);
+            var tmp_symbol2 = new Syntax_rules.Symbol_env(tmp_sym,null,-1,cnt+1);
+
+
+            var cell = args;
+            while (cell && cell.cdr){
+                cell = cell.cdr;
+            }
+            if (cell){
+                cell.cdr = tmp_symbol;
+            }else{
+                args = tmp_symbol;
+            }
+            
+            cell = tmp;
+            while (cell && cell.cdr){
+                cell = cell.cdr;
+            }
+            if (cell){
+                cell.cdr = new Lexer.Pair(new Lexer.Pair(x,new Lexer.Pair(tmp_symbol2,null)),null);
+            }else{
+                tmp = new Lexer.Pair(new Lexer.Pair(x,new Lexer.Pair(tmp_symbol2,null)),null);
+            }
+
+
+            var next = this.bind_convert(bindings,tmp,body,env,next_converter,cnt+1);
+
+            var lmd2 = new Lexer.Pair("lmd",new Lexer.Pair(args,new Lexer.Pair(next,null)));
+            lmd2 = Syntax_converter.Share_object.lambda_converter.convert(lmd2,env,next_converter);
+            
+            var ret = new Lexer.Pair(new Lexer.Token("symbol","call-with-values",-1),new Lexer.Pair(lmd1,new Lexer.Pair(lmd2,null)));
+            return ret;   
+        }else{
+            //err;
+        }
+
+    }
+
+
+    this.bind_convert = function(z,tmp,body,env,next_converter,cnt){
+        if (z){
+            var bind_a = z.car.car;
+            var bind_b = z.car.cdr.car;
+            return this.tmp_convert(bind_a,bind_b,null,z.cdr,tmp,body,env,next_converter,cnt+1);
+        }else{
+            var let_expression = new Lexer.Pair("LET",new Lexer.Pair(tmp,new Lexer.Pair(body)));
+            return Syntax_converter.Share_object.let_converter.convert(let_expression,env,next_converter);
+        }
+    }
+
+
+    this.convert = function(code,env,next_converter){
+        //Syntax_converter.Scheme_symbol           
+        
+        var body = Syntax_converter.Share_object.begin_converter.convert(new Lexer.Pair("BEGIN",code.cdr.cdr),env,next_converter);
+        
+        var ret = this.bind_convert(code.cdr.car,null,body,env,next_converter,0);
+        
+        Syntax_rules.hygenic_convert(ret);
+        return ret;
+    }
+}
+
+Syntax_converter.Syntax.let_star_values = function(){
+    this.syntax_check = function(code){
+        return false;
+    }
+
+    this.convert = function(code,env,next_converter){
+        if (!code.cdr.car){
+            var body = Syntax_converter.Share_object.begin_converter.convert(new Lexer.Pair("I AM BEGIN",code.cdr.cdr),env,next_converter);
+            return body;    
+        }else{
+            var next = this.convert(new Lexer.Pair("I AM LET*-VALUES",new Lexer.Pair(code.cdr.car.cdr,code.cdr.cdr)),env,next_converter);
+            var ret = Syntax_converter.Share_object.let_values_converter.convert(
+                    new Lexer.Pair("I AM LET-VALUES",new Lexer.Pair(new Lexer.Pair(code.cdr.car.car,null),new Lexer.Pair(next,null))),env,next_converter);
+            return ret;
+        }
+    }
+
+}
 
 
 
@@ -916,6 +1115,7 @@ Syntax_converter.Share_object.lambda_converter = new Syntax_converter.Syntax.lam
 Syntax_converter.Share_object.let_converter = new Syntax_converter.Syntax.let();
 Syntax_converter.Share_object.letrec_converter = new Syntax_converter.Syntax.letrec();
 Syntax_converter.Share_object.seti_converter = new Syntax_converter.Syntax.seti();
+Syntax_converter.Share_object.let_values_converter = new Syntax_converter.Syntax.let_values();
 
 //
 //ENV
@@ -1016,12 +1216,17 @@ Syntax_converter.set_r7rs_scheme_base = function(env){
     env.global_syntax["cond"] = new Syntax_converter.Syntax.cond();
     env.global_syntax["and"] = new Syntax_converter.Syntax.and();
     env.global_syntax["or"] = new Syntax_converter.Syntax.or();
+    env.global_syntax["when"] = new Syntax_converter.Syntax.when();
+    env.global_syntax["unless"] = new Syntax_converter.Syntax.unless();
+    env.global_syntax["cond-expand"] = new Syntax_converter.Syntax.cond_expand();
+
     //4.2.2
     env.global_syntax["let"] = new Syntax_converter.Syntax.let();
     env.global_syntax["letrec"] = new Syntax_converter.Syntax.letrec();
     env.global_syntax["let*"] = new Syntax_converter.Syntax.let_star();
-    
-    //env.global_syntax["let-values"] = new Syntax_converter.Syntax.let_values();
+    env.global_syntax["letrec*"] = new Syntax_converter.Syntax.letrec_star();
+    env.global_syntax["let-values"] = new Syntax_converter.Syntax.let_values();
+    env.global_syntax["let*-values"] = new Syntax_converter.Syntax.let_star_values();
     
     //4.2.3
     env.global_syntax["begin"] = new Syntax_converter.Syntax.begin();
@@ -1263,4 +1468,12 @@ Syntax_converter.Alpha_renaming.alpha_renaming = function(code,env){
     loop(code,{});
 }
 
+
+
+
+Syntax_converter.Scheme_symbol = function(data,lib){
+    this.type = "scheme_symbol";
+    this.data = data;
+    this.lib = lib;
+}
 
