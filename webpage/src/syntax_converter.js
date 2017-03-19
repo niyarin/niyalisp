@@ -425,21 +425,27 @@ Syntax_converter.Syntax.define_syntax = function(){
 
 Syntax_converter.Syntax.include = function(reader){
     this.reader = reader;
-
     this.syntax_check = function(code){
         return false;   
     }
 
     this.convert = function(code,env,next_converter){
         var cell = code.cdr;
+        var rcell = new Lexer.Pair(null,null);
+        var rcell_head = rcell;
         while (cell){
             var fname = cell.car.data;
-            console.log(">>",fname);
+
+            var readed_data = this.reader(fname);
+            readed_data = Syntax_converter.Share_object.begin_converter.convert(new Lexer.Pair("I AM BEGIN",readed_data),env,next_converter);
+            rcell.cdr = new Lexer.Pair(readed_data,null);
+            rcell = rcell.cdr;
             cell = cell.cdr;
         }
 
 
-        exit();
+        var ret = Syntax_converter.Share_object.begin_converter.convert(new Lexer.Pair("I AM BEGIN",rcell),env,next_converter);
+        return ret;
     }
 }
 
@@ -636,11 +642,57 @@ Syntax_converter.Syntax.unless = function(){
 
 Syntax_converter.Syntax.cond_expand = function(){
     this.syntax_check = function(code){
-        return fallse;
+        return false;
     }
 
+    
+
+    this.feature_requirement_expand = function(c,env){
+        console.log(c,env.features);
+        if (c.type == "symbol"){
+            var q = env.search_syntax(c.data);
+            if (q.data == "else"){
+                return 1;
+            }
+
+
+            if (env.features[c.data]){
+                return 1;
+            }
+        }else if (c.type == "pair"){
+            var ctop = c.car;
+            if (ctop.data == "library"){
+            
+            }else if (ctop.data == "and"){
+            
+            }else if (ctop.data == "or"){
+                
+            }else if (ctop.data == "not"){
+            
+            }
+
+        }
+        return false;
+    }
+
+
     this.convert = function(code,env,next_converter){
-        return null;
+        var cell = code.cdr;
+        var rcell = new Lexer.Pair(null,null);
+        var rcell_head = rcell;
+        while (cell){
+            var ce_clause = cell.car;
+            if (this.feature_requirement_expand(ce_clause.car,env)){
+                var bodies = Syntax_converter.Share_object.begin_converter.convert(new Lexer.Pair("I AM BEGIN",ce_clause.cdr),env,next_converter);
+                rcell.cdr = new Lexer.Pair(bodies,null);
+                rcell = rcell.cdr;
+            }
+            cell = cell.cdr;
+        }
+
+        var ret = Syntax_converter.Share_object.begin_converter.convert(rcell_head,env,next_converter);
+
+        return ret;
     }
 }
 
@@ -941,12 +993,103 @@ Syntax_converter.Syntax.let_star_values = function(){
             return ret;
         }
     }
-
 }
 
 
 
+//4.2.4
 
+Syntax_converter.Syntax.do = function(){
+    this.syntax_check = function(code){
+        return false;
+    }
+
+    this.convert = function(code,env,next_converter){
+        var predicate = next_converter(code.cdr.cdr.car.car,env,next_converter);
+        var expressions = code.cdr.cdr.car.cdr;
+        var cmds = code.cdr.cdr.cdr;
+
+        if (!expressions){
+            expressions = Syntax_converter.Share_object.undef;
+        }
+        var vars = [];
+        var inits = [];
+        var steps = [];
+        var exps = [];
+        
+        var cell = code.cdr.car;
+        while (cell){
+            vars.push(cell.car.car);
+            inits.push(cell.car.cdr.car);
+            if (cell.car.cdr.cdr){
+                var b = Syntax_converter.Share_object.begin_converter.convert(new Lexer.Pair(null,cell.car.cdr.cdr),env,next_converter);
+                steps.push(b);
+            }else{
+                steps.push(cell.car.car);
+            }
+            cell = cell.cdr;
+        }
+        
+
+        var true_case = null;
+        var false_case = null;
+        
+        if (expressions){
+            true_case = Syntax_converter.Share_object.begin_converter.convert(
+                    new Lexer.Pair(null,expressions),env,next_converter);
+        }else{
+            true_case = Syntax_converter.Share_object.undef;
+        }
+
+        var loop_sym = new Lexer.Token("symbol","loop",-1);
+        var loop_sym_env1 = new Syntax_rules.Symbol_env(loop_sym,null,-1,1);
+        var loop_sym_env2 = new Syntax_rules.Symbol_env(loop_sym,null,-1,1);
+        var loop_sym_env3 = new Syntax_rules.Symbol_env(loop_sym,null,-1,1);
+        
+        var next_loop = new Lexer.Pair(loop_sym_env2,null);
+        var next_loop_head = next_loop;
+        for (var i=0;i<steps.length;i++){
+            next_loop.cdr = new Lexer.Pair(steps[i],null);
+            next_loop = next_loop.cdr;
+        }
+
+        var init_loop = new Lexer.Pair(loop_sym_env3,null);
+        var init_loop_head = init_loop;
+        for (var i=0;i<inits.length;i++){
+            init_loop.cdr = new Lexer.Pair(inits[i],null);
+            init_loop = init_loop.cdr;
+        }
+
+
+        cell = cmds;
+        var rcell = new Lexer.Pair(null,null);
+        rcell_head = rcell;
+        while (cell){
+            rcell.cdr = new Lexer.Pair(cell.car,null);
+            rcell = rcell.cdr;
+            cell = cell.cdr;
+        }
+        rcell.cdr = new Lexer.Pair(next_loop_head,null);
+
+        false_case = Syntax_converter.Share_object.begin_converter.convert(rcell_head,env,next_converter);
+        
+        var if_expression = new Lexer.Pair(Syntax_converter.Share_object.if_token,
+                new Lexer.Pair(predicate,
+                    new Lexer.Pair(true_case,new Lexer.Pair(false_case,null))));
+
+        var lambda_expression = Syntax_converter.utils.generate_lambda(vars,new Lexer.Pair(if_expression,null));
+        var letrec_expression = new Lexer.Pair("I AM LETREC",
+                new Lexer.Pair(new Lexer.Pair(new Lexer.Pair(loop_sym_env1,new Lexer.Pair(lambda_expression,null)),null),
+                    new Lexer.Pair(init_loop_head,null)));
+        
+        letrec_expression = Syntax_converter.Share_object.letrec_converter.convert(letrec_expression,env,next_converter);
+        
+
+        Syntax_rules.hygenic_convert(letrec_expression);
+    
+        return letrec_expression;
+    }
+}
 
 
 
@@ -1127,7 +1270,7 @@ Syntax_converter.Share_object.let_values_converter = new Syntax_converter.Syntax
 Syntax_converter.Env.Syntax_Env = function(){
     this.global_syntax = {};
     this.global = {};
-
+    this.features = Syntax_converter.Env.default_features();
     this.locals = [];
 
     this.search_syntax = function(syntax_name){
@@ -1189,7 +1332,20 @@ Syntax_converter.Syntax_frame = function(){
 }
 
 
-Syntax_converter.set_r7rs_scheme_base = function(env){
+
+
+Syntax_converter.Env.default_features = function(){
+    return {"r7rs":1,"niyalisp":1};
+}
+
+
+
+
+
+
+
+
+Syntax_converter.set_r7rs_scheme_base = function(env,reader){
 
     env.global_syntax["import"] = new Syntax_converter.Syntax.import();
     env.global_syntax["define-library"] = new Syntax_converter.Syntax.define_library();
@@ -1208,7 +1364,7 @@ Syntax_converter.set_r7rs_scheme_base = function(env){
     
     //4.1.7
     //include include-ci
-    env.global_syntax["include"] = new Syntax_converter.Syntax.include();
+    env.global_syntax["include"] = new Syntax_converter.Syntax.include(reader);
 
 
     //4.2.1
@@ -1234,6 +1390,7 @@ Syntax_converter.set_r7rs_scheme_base = function(env){
     //4.2.4
     //do
 
+    env.global_syntax["do"] = new Syntax_converter.Syntax.do();
     //4.2.5
     //delay(scheme delay)
     
@@ -1275,9 +1432,9 @@ Syntax_converter.set_scheme_r5rs = function(env){
 
 
 
-Syntax_converter.create_env = function(){
+Syntax_converter.create_env = function(file_reader){
     var env = new Syntax_converter.Env.Syntax_Env();
-    Syntax_converter.set_r7rs_scheme_base(env);
+    Syntax_converter.set_r7rs_scheme_base(env,file_reader);
     return env;
 }
 
@@ -1308,7 +1465,11 @@ Syntax_converter.Syntax_convert = function(code,env){
         }else if (opecode.type == "symbol-env"){
             //syntax-rulesで退避したsymbolを展開する
             var saved_env = opecode.env;
-            var syntax = saved_env.search_syntax(opecode.data);
+            var syntax = null;
+            if (saved_env){
+                syntax = saved_env.search_syntax(opecode.data);
+            }
+
             if (syntax){
                 if (syntax.syntax_check(code)){
                     console.log("ERROR");
@@ -1326,12 +1487,6 @@ Syntax_converter.Syntax_convert = function(code,env){
     }
 
 }
-
-
-
-
-
-
 
 
 
