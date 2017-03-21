@@ -580,7 +580,7 @@ Niyari_Vm.Vm = function(vm_env){
             }else if (opecode == "PUSH_FRACTION"){
                 var a = stack.pop();
                 var b = stack.pop();
-                stack.push(new Niyari_Vm.Fraction(a,b));
+                stack.push(new Niyari_Vm.Fraction(b,a));
             }else if (opecode == "PUSH_COMPLEX"){
                 var a = stack.pop();
                 var b = stack.pop();
