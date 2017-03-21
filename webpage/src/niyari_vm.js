@@ -81,6 +81,25 @@ Niyari_Vm.Integer = function(i){
     this.data = i;
 }
 
+Niyari_Vm.Float = function(f){
+    this.type = "float";
+    this.data = f;
+}
+
+Niyari_Vm.Fraction = function(a,b){
+    this.type = "fraction";
+    this.numerator = a.data;
+    this.denominator = b.data;
+}
+
+Niyari_Vm.Complex = function(a,b,c){
+    this.type = "complex";
+    this.real = a;
+    this.image = b;
+    this.sign = c;
+}
+
+
 Niyari_Vm.Symbol = function(sym){
     this.type = "symbol";
     this.data = sym;
@@ -161,9 +180,19 @@ Niyari_Vm.set_core_function = function(env){
     env["newline"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["newline"],"newline");
 
 
+    //6.2.6
+    env["integer?"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["integer?"],"integer?");
+    env["real?"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["real?"],"real?");
+    env["rational?"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["rational?"],"rational?");
+    env["exact?"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["exact?"],"exact?");
+    env["inexact?"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["inexact?"],"inexact?");
+    env["exact-integer?"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["exact-integer?"],"exact-integer?");
+    env["complex?"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["complex?"],"complex?");
 
 
-    env["+"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["int+"],"+(int)");
+
+    //env["+"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["int+"],"+(int)");
+    env["+"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["+"],"+");
     env["-"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["int-"],"-(int)");
     env["*"] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["int*"],"*(int)");
     env["="] = new Niyari_Vm.Native_Function(Niyari_Vm.funs["int="],"=(int)");
@@ -327,8 +356,6 @@ Niyari_Vm.Vm = function(vm_env){
 
 
         for (var iii=0;iii<500000;iii++){
-            //console.log(iii + ":",code[addr]);
-            
             var opecode = code[addr][0];
             if (opecode == "PUSH_FUN"){
                 stack.push(new Niyari_Vm.Func(code[addr][1] ));
@@ -548,6 +575,16 @@ Niyari_Vm.Vm = function(vm_env){
                 }
             }else if (opecode == "PUSH_INT"){
                 stack.push(new Niyari_Vm.Integer(code[addr][1]));   
+            }else if (opecode == "PUSH_FLOAT"){
+                stack.push(new Niyari_Vm.Float(code[addr][1]));
+            }else if (opecode == "PUSH_FRACTION"){
+                var a = stack.pop();
+                var b = stack.pop();
+                stack.push(new Niyari_Vm.Fraction(a,b));
+            }else if (opecode == "PUSH_COMPLEX"){
+                var a = stack.pop();
+                var b = stack.pop();
+                stack.push(new Niyari_Vm.Complex(b,a,code[addr][1]));
             }else if (opecode == "PUSH_SYMBOL"){
                 stack.push(new Niyari_Vm.Symbol(code[addr][1]));
             }else if (opecode == "PUSH_STRING"){
@@ -582,7 +619,6 @@ Niyari_Vm.Vm = function(vm_env){
                 stack.push(frees[code[addr][1]]);
             }else if (opecode == "GSET"){
                 this.global[code[addr][1]] = stack.pop();
-
             }else if (opecode == "DYNAMIC_ALLOCATE"){
                 var p = this.heap_set(stack.pop());
                 if (p!=-1){
@@ -621,6 +657,7 @@ Niyari_Vm.Vm = function(vm_env){
         if (ret.type == "breaker"){
             if (ret.opt){
                 Niyari_Vm.error_printer(ret.opt,this.call_history,this.machine_code_history,this);
+                return null;
             }else{
             }
         }else{
@@ -629,7 +666,6 @@ Niyari_Vm.Vm = function(vm_env){
             //console.log(reset);       
             return Niyari_Vm.printer(stack[0]);
         }
-        
     }
 }
 
@@ -817,6 +853,25 @@ Niyari_Vm.printer = function(obj){
             }
         }else if (o.type == "integer"){
             return "" + o.data;
+        }else if (o.type == "float"){
+            if (isNaN(o.data)){
+                return "+nan.0";
+            }else if (!isFinite(o.data)){
+                return "+inf.0";
+            }else if (Math.round(o.data) == o.data){
+                return o.data + ".0";
+            }
+            return "" + o.data;
+        }else if (o.type == "fraction"){
+            return o.numerator + "/" + o.denominator;
+        }else if (o.type == "complex"){
+            var rpart = rec(o.real);
+            var ipart = rec(o.image);
+            var sign = "+";
+            if (o.sign<0){
+                sign = "-";
+            }
+            return rpart + sign + ipart + "i";
         }else if (o.type == "symbol"){
             return o.data;
         }else if (o.type == "string"){
@@ -1014,10 +1069,134 @@ Niyari_Vm.funs["newline"] = function(args){
 //
 //
 
+Niyari_Vm.is_number = function(o){
+    if (o.type == "integer"){
+        return 1;
+    }else if (o.type == "float"){
+        return 2;
+    }else if (o.type == "fraction"){
+        return 3;
+    }
+    return 0;
+}
+
+
+
+Niyari_Vm.funs["number?"] = function(args){
+    if (args.length < 2){
+        args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,"=1","number?");
+    }
+    if (Niyari_Vm.is_number(args[0])){
+        return Niyari_Vm.bool_true;
+    }
+    return Niyari_Vm.bool_false;
+}
+
+
+Niyari_Vm.funs["integer?"] = function(args){
+    if (args.length < 2){
+        args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,"=1","integer?");
+        return Niyari_Vm.undef;
+    }
+    if (args[1].type == "integer"){
+        return Niyari_Vm.bool_true;
+    }
+    return  Niyari_Vm.bool_false;
+}
+
+Niyari_Vm.funs["real?"] = function(args){
+    if (args.length < 2){
+        args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,"=1","real?");
+        return Niyari_Vm.undef;
+    }
+
+    var is_num = Niyari_Vm.is_number(args[1]);
+    if (is_num !=3){
+        return  Niyari_Vm.bool_true;
+    }
+    return  Niyari_Vm.bool_false;
+}
+
+Niyari_Vm.funs["rational?"] = function(args){
+    if (args.length < 2){
+        args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,"=1","real?");
+        return Niyari_Vm.undef;
+    }
+    if (args[1].type == "float"){
+        return Niyari_Vm.bool_true;
+    }else if (args[1].type == "fraction"){
+        return Niyari_Vm.bool_true;
+    }
+    return  Niyari_Vm.bool_false;
+}
+
+Niyari_Vm.funs["exact?"] = function(args){
+    if (args.length != 2){
+        args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,"=1","exact?");
+        return Niyari_Vm.undef;
+    }
+    var num_type = Niyari_Vm.is_number(args[1]);
+    if (num_type){
+        if (num_type == 1){
+            return Niyari_Vm.is_true;
+        }
+    }
+    return Niyari_Vm.bool_false;
+}
+
+Niyari_Vm.funs["inexact?"] = function(args){
+    if (args.length != 2){
+        args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,"=1","exact?");
+        return Niyari_Vm.undef;
+    }
+    var num_type = Niyari_Vm.is_number(args[1]);
+    if (num_type){
+        if (num_type != 1){
+            return Niyari_Vm.is_true;
+        }
+    }
+    return Niyari_Vm.bool_false;
+}
+
+Niyari_Vm.funs["exact-integer?"] = function(args){
+    if (args.length != 2){
+        args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,"=1","exact?");
+        return Niyari_Vm.undef;
+    }
+    var num_type = Niyari_Vm.is_number(args[1]);
+    if (num_type){
+        if (num_type == 1){
+            return Niyari_Vm.is_true;
+        }
+    }
+    return Niyari_Vm.bool_false;
+}
+
+
+Niyari_Vm.funs["complex?"] = function(args){
+    if (args.length < 2){
+        args[0] = Niyari_Vm.error_gen.argnum_error(args.length-1,"=1","complex?");
+        return Niyari_Vm.undef;
+    }
+
+    if (args[1].type == "complex"){
+        return Niyari_Vm.bool_true;
+    }
+    return  Niyari_Vm.bool_false;
+}
+
+
+
+
+
+
+
 Niyari_Vm.operator = {};
 Niyari_Vm.operator.int_add = function(a,b){
     return a.data + b.data;
 }
+
+
 
 Niyari_Vm.operator.int_sub = function(a,b){
     return a.data - b.data;
@@ -1028,7 +1207,13 @@ Niyari_Vm.operator.int_mul = function(a,b){
 }
 
 
-
+Niyari_Vm.funs["+"] = function(args){
+    var ret = new Niyari_Vm.Integer(0);
+    for (var i=1;i<args.length;i++){
+        ret.data += args[i].data;
+    }
+    return ret;
+}
 
 
 
@@ -1130,7 +1315,7 @@ Niyari_Vm.funs["pair?"]  = function(args){
     if (args[1].type == "pair"){
         return Niyari_Vm.bool_true;
     }
-    return new Niyari_Vm.bool_false;
+    return Niyari_Vm.bool_false;
 }
 
 Niyari_Vm.funs["cons"] = function(args){

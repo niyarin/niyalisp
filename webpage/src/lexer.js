@@ -18,6 +18,8 @@ Lexer.Token = function(type,data,line,tag){
 }
 
 
+
+
 Lexer.Pair = function(car,cdr){
     this.type = "pair";
     this.car = car;
@@ -29,8 +31,7 @@ Lexer.Pair = function(car,cdr){
 
 
 
-Lexer.analyze_atom = function(atom,line,pos){
-
+Lexer.analyze_atom = function(atom,line,pos,filename){
     // true false char
     if (atom.length >= 2 && atom[0] == "#"){
         {//true false
@@ -59,33 +60,109 @@ Lexer.analyze_atom = function(atom,line,pos){
         }
         return new Lexer.Token("error","invalid token " + ("(line:" + line + ") ") + atom);
     }
-
-    if (atom.length == 1 && atom[0] == "-"){
+    
+    //'-'
+    if (atom == "-"){
       return new Lexer.Token("symbol","-",line);
     }
-
-
+    if (atom == "+"){
+      return new Lexer.Token("symbol","+",line);
+    }
     
-    //integer
+    
+    //数値
+    if (atom == "+inf.0"){
+        return new Lexer.Token("float",Infinity);
+    }else if (atom == "-inf.0"){
+        return new Lexer.Token("float",-Infinity);
+    }else if (atom == "+nan.0"){
+        return new Lexer.Token("float",NaN);
+    }
+
+    //integer or flaot(先頭が[0-9]|-)
     var c = atom.charCodeAt(0);
-    if ((c >= 48 && c <= 57) || c == 45){
+    if ((c >= 48 && c <= 57) || c == 45 || c == 43){
         var start = 0;
+
         var is_integer = true;
+        var is_float = 0;
+        var is_complex_i = 0;
+        var is_complex_at = 0;
+        var is_fraction = 0;
+        
+        var contain_pm = 0;
+      
+
         if (c == 45){
             start = 1;
+        }else if (c == 43){
+            start = 1;
         }
+
         for (var i=start;i<atom.length;i++){
             var c = atom.charCodeAt(i);
-            if (!(c >= 48 && c <= 57)){
+            if (c == 46){
+                is_float++;
+                is_integer = false;
+            }else if (c == 47){
+                is_fraction++;
+                is_integer = false;
+            }else if (c == 105){
+                is_complex_i++;
+                is_integer = false;
+            }else if (c == 64){
+                is_complex_at++;
+                is_integer = false;
+            }else if (c == 43){
+                contain_pm++;
+                is_integer = false;
+            }else if (c == 45){
+                contain_pm--;
+                is_integer = false;
+            }else if (!(c >= 48 && c <= 57)){
                 is_integer = false;
                 break;
             }
         }
+        
         if (is_integer){
             return new Lexer.Token("integer",parseInt(atom,10),line);   
+        }else if (is_float == 1){
+           var f = parseFloat(atom);
+           return new Lexer.Token("float",f,line);
+        }else if (is_fraction == 1){
+            var n_d = atom.split("/");
+            var n_d_data = [parseInt(n_d[0],10),parseInt(n_d[1],10)];
+            return new Lexer.Token("fraction",n_d_data);
+        }else if (is_complex_at == 1){
+            
+        }else if (is_complex_i == 1){
+            if (contain_pm || start){
+                var ri = null;
+                var sign = 1;
+                if (contain_pm == 1||start){
+                    ri = atom.split("+");
+                    sign = 1;
+                }else if (contain_pm == -1||start){
+                    ri = atom.split("-");
+                    sign = -1;
+                }
+                if (atom.match("[0-9]*[+-][0-9]*")){
+                    var real_part = ri[0];
+                    var image_part = ri[1].split("i")[0];
+                    if (!real_part){
+                        real_part = "0";
+                    }
+                    if (!image_part){
+                        image_part = "1";
+                    }
+                    real_part = Lexer.analyze_atom(real_part,0,0);
+                    image_part = Lexer.analyze_atom(image_part,0,0);
+                    return new Lexer.Token("complex",[real_part,image_part,sign]);
+                }
+            }
         }
     }
-    
     return new Lexer.Token("symbol",atom,"" + line + " " + pos);
 }
 
@@ -95,7 +172,7 @@ Lexer.analyze_atom = function(atom,line,pos){
 //文字列リテラルをシンボルの後に無空白の状態でおくと順序がおかしくなる
 //
 
-Lexer.lexer = function(text){
+Lexer.lexer = function(text,filename){
     text += " ";
     var ret = [];
     var s = "";
@@ -169,7 +246,7 @@ Lexer.lexer = function(text){
                     ret.push(new Lexer.Token("SHARP"));
                     s = "";
                 }else{
-                    ret.push(Lexer.analyze_atom(s,line,pos));
+                    ret.push(Lexer.analyze_atom(s,line,pos,filename));
                     s = "";
                     pos++;
                 }

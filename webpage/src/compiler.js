@@ -77,7 +77,7 @@ Compiler.Compiler = function(vm_env){
                 }
                 return [["LOAD_FREE",code.cdr.car.data]];
             }else if (operator == "#loadout"){
-                return [["LOAD_HEAP",code.cdr.car.data]];
+                return [["LOAD_HEAP",code.cdr.car.data,code.cdr.cdr.car.data]];
             }else if (operator == "#dallocate"){
                 var ret = [];
                 ret = ret.concat(this.compile(code.cdr.car));
@@ -171,7 +171,7 @@ Compiler.Compiler = function(vm_env){
                         if (this.CONFIG_INSERT_DEBUG_CODE){
                             if (code.line != -1){
                                 //index入れてる
-                                return [["LOAD_L",i,code.line]];
+                                return [["LOAD_L",i,code.line,code.data]];
                             }
                         }
                         return [["LOAD_L",i]];
@@ -192,6 +192,7 @@ Compiler.Compiler = function(vm_env){
                     if (code.tag == "gen_var"){
                         return [["LOAD_GLOBAL",code.data,"l "+code.line]];
                     }
+
                     return [["LOAD_GLOBAL",code.data,code.line]];
                 }
 
@@ -205,8 +206,16 @@ Compiler.Compiler = function(vm_env){
             }
         }else if (code.type == "integer"){
             return [["PUSH_INT",code.data]];
+        }else if (code.type == "float"){
+            return [["PUSH_FLOAT",code.data]];
+        }else if (code.type == "fraction"){
+            return [["PUSH_INT",code.data[0]],["PUSH_INT",code.data[1]],["PUSH_FRACTION"]];
         }else if (code.type == "string"){
             return [["PUSH_STRING",code.data]];
+        }else if (code.type == "complex"){
+            var rpart = this.compile(code.data[0])[0];
+            var ipart = this.compile(code.data[1])[0];
+            return [rpart,ipart,["PUSH_COMPLEX",code.data[2]]];
         }else if (code.type == "vector"){
           var const_code = Compiler.compile_const_vector(code.data);
           var static_addr = this.statics_push(const_code);   
